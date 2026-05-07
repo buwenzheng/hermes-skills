@@ -129,7 +129,7 @@ git diff --cached --name-only | head -50
 
 # 扫描所有 staged 文件（代码 + README.md），排除 SKILL.md 自身
 # SKILL.md 已在 skill-audit Step 1 扫描过，此处只做兜底
-STAGED_ALL=$(git diff --cached --name-only | grep -v '^SKILL\.md$' || true)
+STAGED_ALL=$(git diff --cached --name-only | grep -v 'SKILL\.md$' || true)
 [ -z "$STAGED_ALL" ] && echo "无文件需要扫描" && exit 0
 
 while read f; do

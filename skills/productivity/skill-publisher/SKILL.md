@@ -18,6 +18,13 @@ required_environment_variables:
 
 将本地 skill 封装成符合 Hermes 标准格式，通过安全+格式双重审核后，才能发布到 GitHub。
 
+## INT 初始化步骤（新用户首次使用）
+
+1. 确保 `GITHUB_TOKEN` 已配置（在 `.env` 或通过 `hermes setup`）
+2. 确认目标 GitHub 仓库存在，或准备好创建新仓库
+3. 用户指定要发布的 skill 名称
+4. 按流程执行审核
+
 ## 核心原则
 
 **审核不通过，一律不发布。**
@@ -93,6 +100,32 @@ find . -name "credentials.json" -type f
 | `password` | ≥8字符 | 密码字段 |
 
 **任意一项命中 → 审核不通过，列出具体文件+行号，中断发布流程。**
+
+### ⚠️ Grep 误报处理
+
+grep pattern 会匹配到 SKILL.md 文档里的变量引用（如 `${GITHUB_TOKEN}`）和说明文字（如 `ghp_ 前缀`），**不是真实泄露**。
+
+**区分方法**：排除以下情况的命中
+```
+${...}       # 变量占位符
+# ...        # 注释行
+description  # frontmatter 字段
+prompt/help   # 提示文本
+Authorization # HTTP 头
+git remote   # git 命令
+```
+
+**二次确认正确姿势**：
+```bash
+# 宽泛扫描（记录所有命中）
+grep -rnE "token|api_key|ghp_|sk-|password\s*[:=]" .
+
+# 过滤文档（排除上面的白名单词后看是否还有真实泄露）
+grep -rnE "token|api_key|ghp_|sk-|password\s*[:=]" . \
+  | grep -vE '\$\{|#|description|prompt|help|prefix|Authorization|git remote|GITHUB_TOKEN'
+
+# 如果过滤后无输出 = 干净；有输出 → 逐条核查
+```
 
 ---
 
@@ -271,6 +304,18 @@ curl -s -H "Authorization: token ${GITHUB_TOKEN}" \
 ```
 
 ---
+
+## 常见陷阱（Common Pitfalls）
+
+1. **.gitignore 加在 git add 之后** — 敏感文件已进入暂存区，历史无法清除。必须先加 .gitignore 再 add。
+
+2. **pre-add grep 太宽泛** — `${TOKEN}` 变量引用、`token` 字段说明文字会误报。用排除词（`${`、`#`、`prompt`、`help`）过滤后再判断。
+
+3. **README.md 遗漏** — 审核时漏查 README，导致外部用户看不懂 skill 用途。
+
+4. **推送后不验证** — 认为 push 成功就是成功了。必须 curl GitHub API 确认文件真的存在。
+
+5. **token 嵌在 remote URL 里 push** — push 完立刻检查 `git log` 确认 token 没残留在 commit 历史。若泄露立刻 `git filter-branch` + force push + 轮换 token。
 
 ## 禁止项
 

@@ -55,9 +55,9 @@ patterns=(
   'AIza[0-9A-Za-z_-]{35}'
   'AccountKey=[a-zA-Z0-9+/=]{88}'
   'eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*'
-  'token\s*[:=]\s*["\x27][a-zA-Z0-9_-]{16,}["\x27]'
-  'api[_-]?key\s*[:=]\s*["\x27][a-zA-Z0-9_-]{16,}["\x27]'
-  'password\s*[:=]\s*["\x27][^"'\'']{8,}["\x27]'
+  'token\s*[:=]\s*['\''][a-zA-Z0-9_-]{16,}['\'']'
+  'api[_-]?key\s*[:=]\s*['\''][a-zA-Z0-9_-]{16,}['\'']'
+  'password\s*[:=]\s*['\''][^'\'']{8,}['\'']'
 )
 FOUND=0
 for p in "${patterns[@]}"; do
@@ -72,13 +72,12 @@ done
 存在以下任意文件 → REJECTED：
 
 ```bash
-find . -name "*_config.json" -type f
-find . -name "*_cache.json" -type f
-find . -name "__pycache__" -type d
-find . -name "*.pyc" -type f
-find . -name ".env" -type f
-find . -name "*.log" -type f
-find . -name "credentials.json" -type f
+FOUND_FORBIDDEN=0
+for pattern in "*_config.json" "*_cache.json" "__pycache__" "*.pyc" ".env" "*.log" "credentials.json"; do
+  hits=$(find . -name "$pattern" \( -type f -o -type d \) 2>/dev/null || true)
+  [ -n "$hits" ] && { echo "FORBIDDEN: $hits"; FOUND_FORBIDDEN=1; }
+done
+[ "$FOUND_FORBIDDEN" = "1" ] && echo "FAIL: forbidden files found" && exit 1
 ```
 
 ### 敏感信息判断标准
@@ -226,7 +225,7 @@ Skill: ${SKILL_NAME}
 
 4. **审核通过后手动修改了文件** — 审核通过后若又改了代码，必须重新跑审核。
 
-5. **macOS grep 不支持 `\x27`** — 单引号转义在 macOS BSD grep 里不工作，改用 `[^"']`。
+5. **禁止文件检查未中断** — `find` 命令列出文件后必须 `exit 1`，否则脚本继续执行并可能错误给出 APPROVED。
 
 ---
 

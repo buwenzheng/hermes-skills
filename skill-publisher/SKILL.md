@@ -90,7 +90,7 @@ patterns=(
   'eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*'
   'token\s*[:=]\s*["\x27][a-zA-Z0-9_-]{16,}["\x27]'
   'api[_-]?key\s*[:=]\s*["\x27][a-zA-Z0-9_-]{16,}["\x27]'
-  'password\s*[:=]\s*["\x27][^"\x27]{8,}["\x27]'
+  'password\s*[:=]\s*["\x27][^"'\'']{8,}["\x27]'
 )
 FOUND=0
 for p in "${patterns[@]}"; do
@@ -275,10 +275,12 @@ git diff --cached --name-only | head -50
 # 先看有哪些代码文件会被提交，再对代码文件做敏感扫描
 STAGED_CODE=$(git diff --cached --name-only | grep -iE '\.(py|json|sh|yaml|yml|env|toml|txt|conf)$' || true)
 [ -z "$STAGED_CODE" ] && echo "无代码文件需要扫描" && exit 0
-echo "$STAGED_CODE" | while read f; do
-  grep -nE "ghp_[a-zA-Z0-9]{36}|sk-[a-zA-Z0-9]{48}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}" "$f" && echo "FAIL: sensitive data in $f" && exit 1
-done
-[ $? -eq 0 ] || exit 1
+while read f; do
+  grep -nE "ghp_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}|sk-[a-zA-Z0-9]{48}|sk-proj-[a-zA-Z0-9]{48,}|sk-ant-[a-zA-Z0-9]{32,}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|AccountKey=[a-zA-Z0-9+/=]{88}|eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*|token\s*[:=]\s*[\"'][a-zA-Z0-9_-]{16,}[\"']|api[_-]?key\s*[:=]\s*[\"'][a-zA-Z0-9_-]{16,}[\"']|password\s*[:=]\s*[\"'][^\"']{8,}[\"']" "$f" && {
+    echo "FAIL: sensitive data in $f"
+    exit 1
+  }
+done <<< "$STAGED_CODE"
 
 ---
 
@@ -362,10 +364,12 @@ git diff --cached --name-only
 # 只检查新增的代码文件，排除 markdown
 STAGED_CODE=$(git diff --cached --name-only | grep -iE '\.(py|json|sh|yaml|yml|env|toml|txt|conf)$' || true)
 [ -z "$STAGED_CODE" ] && echo "无代码文件需要扫描" && exit 0
-echo "$STAGED_CODE" | while read f; do
-  grep -nE "ghp_[a-zA-Z0-9]{36}|sk-[a-zA-Z0-9]{48}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}" "$f" && echo "FAIL: sensitive data in $f" && exit 1
-done
-[ $? -eq 0 ] || exit 1
+while read f; do
+  grep -nE "ghp_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}|sk-[a-zA-Z0-9]{48}|sk-proj-[a-zA-Z0-9]{48,}|sk-ant-[a-zA-Z0-9]{32,}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|AccountKey=[a-zA-Z0-9+/=]{88}|eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*|token\s*[:=]\s*[\"'][a-zA-Z0-9_-]{16,}[\"']|api[_-]?key\s*[:=]\s*[\"'][a-zA-Z0-9_-]{16,}[\"']|password\s*[:=]\s*[\"'][^\"']{8,}[\"']" "$f" && {
+    echo "FAIL: sensitive data in $f"
+    exit 1
+  }
+done <<< "$STAGED_CODE"
 
 git commit -m "feat: add ${SKILL_NAME}"
 
@@ -375,10 +379,10 @@ cat > /tmp/git-askpass.sh << 'EOF'
 #!/bin/bash
 echo "${GITHUB_TOKEN}"
 EOF
-chmod 600 /tmp/git-askpass.sh
+chmod 700 /tmp/git-askpass.sh
 
-# 动态检测远程分支名，避免老仓库是 master
-DEFAULT_BRANCH=$(git remote show origin 2>/dev/null | awk '/HEAD branch/ {print $NF}' || echo "main")
+# 动态检测远程分支名，避免老仓库是 master（本地检测，不走网络）
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || echo "main")
 git push origin "$DEFAULT_BRANCH" --force-with-lease
 ```
 

@@ -16,18 +16,24 @@ required_environment_variables:
 
 ## INT 初始化步骤（新用户首次使用）
 
-1. 确保思源笔记已启动，并开启 API 功能（设置 → 关于 → API Token）
-2. 确认思源服务的 IP 地址和端口（默认 `127.0.0.1:6806`，若远程访问需填写实际地址）
-3. 获取 API Token
-4. 初始化连接：
+> ⚠️ `siyuan_config.json` 不随 skill 发布（禁止文件），请勿用 `init` 命令写入配置。
+
+1. 设置环境变量（推荐）：
    ```bash
-   python3 scripts/siyuan_api.py init <API URL> <Token>
+   export SIYUAN_API_URL=http://127.0.0.1:6806
+   export SIYUAN_API_TOKEN=你的_token
    ```
-   例如：
+2. 验证连接（无需配置文件，直接调 API）：
    ```bash
-   python3 scripts/siyuan_api.py init http://127.0.0.1:6806 your_token_here
+   unset http_proxy https_proxy ALL_PROXY
+   curl -X POST "${SIYUAN_API_URL}/api/system/version" \
+     -H "Authorization: Token ${SIYUAN_API_TOKEN}" -d '{}'
    ```
-5. 验证成功后会列出所有笔记本，表示连接正常
+   成功返回 `{"code":0,"data":"3.6.5"}` 表示正常。
+3. 列出笔记本验证全流程：
+   ```bash
+   python3 scripts/siyuan_api.py list_notebooks
+   ```
 
 > **注意**：如果远程访问思源，API URL 应填写实际可访问的地址（如 `http://192.168.1.100:6806`），确保Hermes所在机器能连通该端口。
 
@@ -51,7 +57,7 @@ required_environment_variables:
 1. **`/api/ping` 不存在**：思源没有 `/api/ping` 端点，验证连接用 `/api/system/version`，返回 `{"code":0,"data":"3.6.5"}` 表示正常。
 2. **`get_file` ≠ 读文档内容**：两者是两套路径系统。读文档正文用 `export_md <文档ID>`；`get_file` 用的是工作区物理路径 `/data/<笔记本ID>/<文档路径>.sy`。
 3. **`create_doc` 多行内容**：命令行传入多行内容时换行符会被转义。若需多行内容，先 `create_doc` 创建空文档，再用 `update_block` 写入。
-4. **写操作不清缓存**：`siyuan_cache.json` 会在写操作后自动失效，但用 `--no-cache` 时缓存不会自动更新，记得手动 `cache_clear`。
+4. **缓存不随 skill 发布**：`siyuan_cache.json` 是本地缓存文件，不随 skill 发布。脚本默认使用本地缓存（`~/.hermes/skills/siyuan/scripts/siyyuan_cache.json`），用 `--no-cache` 可强制直连 API。
 5. **Terminal 与 execute_code 沙箱视图不一致**：始终用 terminal 工具操作脚本文件，不要依赖 execute_code 沙箱读写同一路径。
 
 ## 核心概念
@@ -106,7 +112,16 @@ required_environment_variables:
 
 ## 配置
 
-配置文件位置：`~/.hermes/skills/siyuan/scripts/siyuan_config.json`
+推荐使用环境变量，脚本读取优先级：**命令行参数 > 环境变量 > 配置文件**。
+
+| 变量 | 说明 |
+|------|------|
+| `SIYUAN_API_URL` | 思源服务地址（默认 `127.0.0.1:6806`） |
+| `SIYUAN_API_TOKEN` | 在思源设置 → 关于 → API Token 中获取 |
+
+> ⚠️ `siyuan_config.json` 不随 skill 发布（禁止文件），不要把 token 写进配置文件。
+
+如需使用配置文件（仅本地临时用途），参考 `scripts/siyuan_config.json.template`：
 
 ```json
 {
@@ -115,21 +130,6 @@ required_environment_variables:
     "local_path": ""
 }
 ```
-
-- `api_url`：思源服务地址（默认 `127.0.0.1:6806`）
-- `api_token`：在思源设置 → 关于 → API Token 中获取，**不要硬编码在文件里**，使用环境变量引用 `${SIYUAN_API_TOKEN}`
-
-### 快速初始化（三合一）
-
-新部署或更换环境时，用 `init` 命令一步完成配置写入+连接验证+缓存预热：
-
-```bash
-python3 scripts/siyuan_api.py init <API URL> <Token>
-```
-
-执行流程：① 写入 siyuan_config.json ② 调用 /api/system/version 验证连通性 ③ 列出所有笔记本并预热 doc_tree 缓存。
-
-**注意**：Siyuan API 不存在 `/api/ping` 端点，验证连接用 `/api/system/version`。
 
 ### 连接问题排查
 

@@ -1,30 +1,46 @@
 # Skill Publisher
 
-将本地 Hermes skill 安全发布到 GitHub 的工具。
+将本地 Hermes skill 安全发布到 GitHub。
+
+## 前置条件
+
+**必须先通过 `skill-audit` 审核并得到 APPROVED 结果。**
 
 ## 功能
 
-- 安全扫描：检测 token、API key、密码等敏感信息
-- 格式审核：检查 frontmatter、README、正文结构
-- 敏感剥离：删除缓存、配置，模板化
-- GitHub 发布：创建仓库 + push + 验证
+- 读取 audit 结果，强制二次确认
+- .gitignore 追加
+- staged grep 二次确认（完整 12 个 pattern）
+- GIT_ASKPASS 安全推送
+- GitHub API 验证
+
+## 使用
+
+```
+当用户要求发布/推送/提交某个已通过审核的 skill 时
+```
+
+## 审核后流程
+
+```
+skill-audit APPROVED
+    ↓
+skill-publisher
+    ↓
+Step 1: .gitignore
+Step 2: staged grep 二次确认
+Step 3: commit + push
+Step 4: API 验证
+```
 
 ## 目录结构
 
 ```
 skill-publisher/
-├── SKILL.md      # 主文件（含完整审核流程）
+├── SKILL.md      # 主文件
 └── README.md     # 本文件
 ```
 
-## 使用方式
-
-当用户指定要发布的 skill 名称时，运行 `skill-publisher` skill。
-
 ## 安全原则
 
-审核不通过，一律不发布。禁止项：
-- 跳过安全扫描直接发布
-- 在 .gitignore 就绪前执行 git add
-- 跳过二次 grep 确认直接 push
-- 在文档中暴露真实 API Key
+未经 skill-audit APPROVED，一律不发布。

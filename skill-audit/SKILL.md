@@ -14,9 +14,21 @@ metadata:
 
 对本地 skill 进行安全扫描 + 格式审核，输出详细报告。**不修改本地文件**，只做检测和给出清理建议。隔离操作由 skill-publisher 在临时目录中自动处理。
 
-## 何时触发
+## When to Use
 
 用户要求审核/扫描/检查某个 skill 时。不是定时任务，不自动化。
+
+## INT 初始化步骤
+
+skill-audit 无需初始化，下载后直接使用。
+
+若需单独运行扫描脚本：
+
+```bash
+python3 ~/.hermes/skills/productivity/skill-audit/scripts/audit_scan.py <skill-name>
+# 例如
+python3 ~/.hermes/skills/productivity/skill-audit/scripts/audit_scan.py siyuan
+```
 
 ---
 
@@ -38,7 +50,21 @@ Step 4: 复查（重新扫描）
 
 ## Step 1: 安全扫描
 
-### 扫描命令
+### 推荐方式：使用 Python 脚本
+
+```bash
+python3 ~/.hermes/skills/productivity/skill-audit/scripts/audit_scan.py ${SKILL_NAME}
+# 示例
+python3 ~/.hermes/skills/productivity/skill-audit/scripts/audit_scan.py siyuan
+```
+
+脚本同时检测：敏感信息、禁止文件、格式规范（Frontmatter / README / 正文结构）。
+
+### 手动方式：分步检查
+
+若不方便使用脚本，可分步执行：
+
+#### 1.1 敏感信息扫描
 
 ```bash
 cd ~/.hermes/skills/${SKILL_NAME}
@@ -56,8 +82,11 @@ patterns=(
   'AccountKey=[a-zA-Z0-9+/=]{88}'
   'eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*'
   'token\s*[:=]\s*['\''][a-zA-Z0-9_-]{16,}['\'']'
+  'token\s*[:=]\s*"[a-zA-Z0-9_-]{16,}"'
   'api[_-]?key\s*[:=]\s*['\''][a-zA-Z0-9_-]{16,}['\'']'
+  'api[_-]?key\s*[:=]\s*"[a-zA-Z0-9_-]{16,}"'
   'password\s*[:=]\s*['\''][^'\'']{8,}['\'']'
+  'password\s*[:=]\s*"[^"]{8,}"'
 )
 FOUND=0
 for p in "${patterns[@]}"; do
@@ -67,7 +96,7 @@ done
 [ "$FOUND" = "1" ] && echo "FAIL: sensitive data found, abort" && exit 1
 ```
 
-### 禁止文件检查
+#### 1.2 禁止文件检查
 
 存在以下任意文件 → REJECTED：
 
@@ -231,5 +260,21 @@ Skill: ${SKILL_NAME}
 
 ## 参考文件
 
+- `references/hermes-skill-standard.md` — Hermès skill 结构规范（必填字段/正文章节/禁止内容）
 - `references/github-proxy.md` — GitHub 操作代理配置
 - `references/git-token-security.md` — Token 安全推送方式对比 + 泄露应急
+- `scripts/audit_scan.py` — Python 自动化扫描脚本（推荐优先使用）
+
+## 常见陷阱（Common Pitfalls）
+
+1. **跳过硬扫直接发布** — 安全扫描是强制性前置步骤，任何时候都不可跳过。
+
+2. **白名单含敏感词** — 白名单只能排除文档类文字（`${`、`#`、`prompt`、`help`、`description` 等）。`ghp_`/`sk-`/`AKIA` 等真实泄露模式严禁加入白名单。
+
+3. **audit 修改本地文件** — audit 只检测不修改。隔离/剥离由 skill-publisher 在临时目录中处理，否则会破坏用户原始文件。
+
+4. **审核通过后手动修改了文件** — 审核通过后若又改了代码，必须重新跑审核。
+
+5. **禁止文件检查未中断** — `find` 命令列出文件后必须 `exit 1`，否则脚本继续执行并可能错误给出 APPROVED。
+
+6. **token/api_key pattern 漏掉双引号格式** — `token\s*[:=]\s*['\'']...` 只匹配单引号包裹，漏掉 `siyuan_config.json` 类场景。必须同时覆盖单引号和双引号两种格式：`token\s*[:=]\s*"..."`

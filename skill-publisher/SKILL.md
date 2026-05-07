@@ -24,9 +24,22 @@ required_environment_variables:
 
 ---
 
-## 何时触发
+## When to Use
 
 用户说"发布"、"push"或"提交"某个 skill 时，且该 skill 已通过 `skill-audit` 审核。
+
+## INT 初始化步骤
+
+1. 配置 GitHub Token（环境变量或 `~/.netrc`）：
+   ```bash
+   export GITHUB_TOKEN="ghp_xxxxxxxxxxxx"
+   ```
+2. 确保代理可用（如需访问 GitHub）：
+   ```bash
+   git config --global http.proxy http://127.0.0.1:7890
+   git config --global https.proxy http://127.0.0.1:7890
+   ```
+3. 确认目标 skill 已通过 `skill-audit` 审核（结果为 APPROVED）
 
 ---
 

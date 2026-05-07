@@ -1,0 +1,12 @@
+# 敏感文件
+**/*_config.json
+**/*_cache.json
+**/credentials.json
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# OS
+.DS_Store

@@ -1,7 +1,7 @@
 ---
 name: skill-publisher
-description: Use when the user asks to publish a local Hermes skill to GitHub. Reads the audit report from skill-audit, and only proceeds if the result is APPROVED. Performs git clone, sensitive file cleanup, git add, staged grep check, commit, and token-authenticated push. Triggered manually — never automated.
-version: 1.0.0
+description: Use when the user asks to publish a local Hermes skill to GitHub. Reads the audit report from skill-audit, and only proceeds if the result is APPROVED. Performs git clone, sensitive file cleanup, version bump, staged grep check, commit, and direct push to main. Triggered manually — never automated.
+version: 1.3.0
 author: Hermes Agent
 license: MIT
 metadata:

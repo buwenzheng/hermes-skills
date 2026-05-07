@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """
 Hermes Skill 发布脚本
-封装 clone → 隔离敏感文件 → git add → staged grep → commit → push → 验证
+
+流程：
+  1. clone → 隔离敏感文件
+  2. 版本号 bump（patch +1）
+  3. git add → staged grep → commit → push
+  4. GitHub API 验证
+  5. PUBLISHED.md 更新 → 第二次 commit + push
 """
 
 import os
@@ -11,9 +17,9 @@ import subprocess
 import time
 import re
 import shutil
+import argparse
 from pathlib import Path
 
-# ── 共享敏感 patterns（与 audit_scan.py 保持一致）─────────────────────────────
 SENSITIVE_PATTERNS = [
     (r'ghp_[a-zA-Z0-9]{36}', 'GitHub PAT'),
     (r'github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}', 'GitHub Fine-grained PAT'),
@@ -57,74 +63,44 @@ GITIGNORE_CONTENT = """
 """.lstrip('\n')
 
 
-def run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
-    """执行命令，失败时打印并退出"""
-    result = subprocess.run(cmd, **kwargs)
+def run(cmd: list, *, cwd: Path | None = None) -> subprocess.CompletedProcess:
+    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"❌ 命令失败: {' '.join(cmd)}")
         print(f"   exit code: {result.returncode}")
-        if result.stdout:
-            print(f"   stdout: {result.stdout.decode(errors='replace')}")
-        if result.stderr:
-            print(f"   stderr: {result.stderr.decode(errors='replace')}")
+        print(f"   stdout: {result.stdout[:300]}")
+        print(f"   stderr: {result.stderr[:300]}")
         sys.exit(1)
     return result
 
 
-def check_repo_exists(user: str, repo: str, token: str) -> bool:
-    """检查 GitHub 仓库是否存在"""
+def curl_get(url: str, token: str) -> dict:
     result = subprocess.run(
+        ['curl', '-s', '-H', f'Authorization: token {token}', url],
+        capture_output=True, text=True
+    )
+    try:
+        return json.loads(result.stdout)
+    except Exception:
+        return {}
+
+
+def check_repo_exists(user: str, repo: str, token: str) -> bool:
+    r = subprocess.run(
         ['curl', '-s', '-o', '/dev/null', '-w', '%{http_code}',
          '-H', f'Authorization: token {token}',
          f'https://api.github.com/repos/{user}/{repo}'],
         capture_output=True, text=True
     )
-    return result.stdout == '200'
+    return r.stdout == '200'
 
 
-def get_default_branch(work_dir: Path, token: str, user: str, repo: str) -> str:
-    """获取默认分支名（多层 fallback）"""
-    # 1. symbolic-ref（正常 clone）
-    result = subprocess.run(
-        ['git', 'symbolic-ref', 'refs/remotes/origin/HEAD'],
-        cwd=work_dir, capture_output=True, text=True
-    )
-    if result.returncode == 0:
-        branch = result.stdout.strip().replace('refs/remotes/origin/', '')
-        if branch:
-            return branch
-
-    # 2. git remote show（--depth 1 时可能可用）
-    result = subprocess.run(
-        ['git', 'remote', 'show', 'origin'],
-        cwd=work_dir, capture_output=True, text=True
-    )
-    if result.returncode == 0:
-        for line in result.stdout.splitlines():
-            if 'HEAD branch' in line:
-                branch = line.split(':')[-1].strip()
-                if branch:
-                    return branch
-
-    # 3. GitHub API
-    result = subprocess.run(
-        ['curl', '-s',
-         '-H', f'Authorization: token {token}',
-         f'https://api.github.com/repos/{user}/{repo}'],
-        capture_output=True, text=True
-    )
-    if result.returncode == 0:
-        try:
-            data = json.loads(result.stdout)
-            return data.get('default_branch', 'main')
-        except Exception:
-            pass
-
-    return 'main'
+def get_default_branch(user: str, repo: str, token: str) -> str:
+    data = curl_get(f'https://api.github.com/repos/{user}/{repo}', token)
+    return data.get('default_branch', 'main')
 
 
 def quarantine_sensitive_files(skill_dir: Path) -> list[str]:
-    """隔离敏感文件（直接删除），返回被删除的文件列表"""
     quarantined = []
     for pattern in FORBIDDEN_PATTERNS:
         if '*' in pattern:
@@ -139,15 +115,12 @@ def quarantine_sensitive_files(skill_dir: Path) -> list[str]:
 
 
 def stage_grep(work_dir: Path) -> list[dict]:
-    """扫描所有 staged 文件，排除 SKILL.md"""
-    findings = []
-    result = run(['git', 'diff', '--cached', '--name-only'],
-                 cwd=work_dir, capture_output=True, text=True)
+    result = run(['git', 'diff', '--cached', '--name-only'], cwd=work_dir)
     staged_files = [
         line.strip() for line in result.stdout.splitlines()
         if line.strip() and not line.strip().endswith('SKILL.md')
     ]
-
+    findings = []
     for fpath in staged_files:
         full = work_dir / fpath
         if not full.exists() or not full.is_file():
@@ -156,7 +129,6 @@ def stage_grep(work_dir: Path) -> list[dict]:
             content = full.read_text(encoding='utf-8', errors='ignore')
         except Exception:
             continue
-
         for pattern, label in SENSITIVE_PATTERNS:
             for m in re.finditer(pattern, content):
                 linum = content[:m.start()].count('\n') + 1
@@ -169,28 +141,31 @@ def stage_grep(work_dir: Path) -> list[dict]:
     return findings
 
 
-def verify_published(user: str, repo: str, skill_name: str, token: str) -> tuple[bool, str]:
-    """验证文件已推送到 GitHub"""
-    result = subprocess.run(
-        ['curl', '-s',
-         '-H', f'Authorization: token {token}',
-         f'https://api.github.com/repos/{user}/{repo}/contents/{skill_name}/SKILL.md'],
-        capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        return False, 'curl failed'
-    try:
-        data = json.loads(result.stdout)
-        sha = data.get('sha', '')
-        if sha:
-            return True, sha
-        return False, data.get('message', 'no sha')
-    except Exception:
-        return False, result.stdout[:100]
+def get_skill_version(skill_dir: Path) -> str:
+    skill_md = skill_dir / 'SKILL.md'
+    if not skill_md.exists():
+        return '1.0.0'
+    content = skill_md.read_text(encoding='utf-8', errors='ignore')
+    m = re.search(r'^version:\s*(\S+)', content, re.MULTILINE)
+    return m.group(1) if m else '1.0.0'
+
+
+def bump_version(content: str) -> tuple[str, str]:
+    m = re.search(r'^version:\s*(\S+)', content, re.MULTILINE)
+    if not m:
+        return content, '1.0.1'
+    cur = m.group(1)
+    parts = cur.split('.')
+    while len(parts) < 3:
+        parts.append('0')
+    parts[-1] = str(int(parts[-1]) + 1)
+    new_ver = '.'.join(parts)
+    updated = re.sub(r'^version:\s*\S+', f'version: {new_ver}',
+                     content, flags=re.MULTILINE)
+    return updated, new_ver
 
 
 def _dedupe_gitignore(gitignore_path: Path):
-    """去重 .gitignore 重复行"""
     if not gitignore_path.exists():
         return
     lines = gitignore_path.read_text().splitlines()
@@ -203,80 +178,9 @@ def _dedupe_gitignore(gitignore_path: Path):
     gitignore_path.write_text('\n'.join(deduped) + '\n')
 
 
-def get_skill_version(skill_dir: Path) -> str:
-    """从 SKILL.md frontmatter 提取 version，没有则用 1.0.0"""
-    skill_md = skill_dir / 'SKILL.md'
-    if not skill_md.exists():
-        return '1.0.0'
-    content = skill_md.read_text(encoding='utf-8', errors='ignore')
-    m = re.search(r'^version:\s*(\S+)', content, re.MULTILINE)
-    return m.group(1) if m else '1.0.0'
-
-
-def bump_version_in_workdir(work_skill_md: Path, new_version: str) -> None:
-    """将克隆目录里的 SKILL.md version 字段更新为 new_version"""
-    if not work_skill_md.exists():
-        return
-    content = work_skill_md.read_text(encoding='utf-8', errors='ignore')
-    updated = re.sub(
-        r'^version:\s*\S+', f'version: {new_version}', content, flags=re.MULTILINE
-    )
-    work_skill_md.write_text(updated, encoding='utf-8')
-
-
-def _fetch_published_md(user: str, repo: str, token: str) -> str:
-    """从 GitHub 获取当前 PUBLISHED.md 内容，不存在则返回空"""
-    result = subprocess.run(
-        ['curl', '-s',
-         '-H', f'Authorization: token {token}',
-         f'https://api.github.com/repos/{user}/{repo}/contents/PUBLISHED.md'],
-        capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        return ''
-    try:
-        data = json.loads(result.stdout)
-        import base64
-        return base64.b64decode(data.get('content', '')).decode('utf-8', errors='ignore')
-    except Exception:
-        return ''
-
-
-def _update_published_md(work_dir: Path, skill_name: str, version: str,
-                           commit_hash: str, user: str, repo: str) -> bool:
-    """
-    更新本地 work_dir 中的 PUBLISHED.md：
-    - skill 已存在 → 更新 version 和 commit
-    - skill 不存在 → 追加新行
-    返回 True 表示有更新
-    """
-    published_path = work_dir / 'PUBLISHED.md'
-    today = time.strftime('%Y-%m-%d')
-    content = _fetch_published_md(user, repo, token)
-    lines = content.splitlines() if content else []
-
-    header = ['# Published Skills', '', '| Skill | Version | Published | Commit |',
-              '|-------|---------|-----------|--------|']
-    new_entry = f'| {skill_name} | {version} | {today} | `{commit_hash}` |'
-
-    # 解析现有行，找 skill
-    found = False
-    new_lines = []
-    for line in lines:
-        if line.startswith(f'| {skill_name} |'):
-            new_lines.append(new_entry)
-            found = True
-        else:
-            new_lines.append(line)
-
-    if not found:
-        # 追加
-        new_lines = header + [new_entry, '']
-    else:
-        new_lines = new_lines + ['']
-
-    published_path.write_text('\n'.join(new_lines))
-    return True
+def _git_config(work_dir: Path, key: str, val: str):
+    subprocess.run(['git', 'config', key, val], cwd=work_dir,
+                   capture_output=True)
 
 
 def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
@@ -285,14 +189,14 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
 
     try:
         print(f"=== Skill 发布流程 ===")
-        print(f"Skill: {skill_name}")
-        print(f"目标: {user}/{repo}")
+        print(f"Skill : {skill_name}")
+        print(f"目标 : {user}/{repo}")
         print()
 
         # Step 1: 确认仓库存在
         print("■ Step 1: 确认仓库存在")
         if not check_repo_exists(user, repo, token):
-            print(f"❌ 仓库不存在: {user}/{repo}，请先在 GitHub 创建")
+            print(f"❌ 仓库不存在: {user}/{repo}")
             sys.exit(1)
         print(f"  ✓ 仓库存在")
         print()
@@ -304,9 +208,9 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
         quarantine.mkdir(parents=True, exist_ok=True)
 
         run(['git', 'clone', '--depth', '1',
-             f'https://github.com/{user}/{repo}.git', str(work_dir)])
+             f'https://github.com/{user}/{repo}.git', str(work_dir)],
+            capture=False)
 
-        # 复制 skill（平铺结构）
         target = work_dir / skill_name
         target.mkdir(exist_ok=True)
         for item in skill_dir.iterdir():
@@ -314,44 +218,44 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
                 continue
             src = skill_dir / item
             if src.is_dir():
-                shutil.copytree(src, target / item.name)
+                shutil.copytree(src, target / item.name, dirs_exist_ok=True)
             else:
                 shutil.copy2(src, target / item.name)
 
-        # 追加 .gitignore（去重）
         gitignore = work_dir / '.gitignore'
         existing = gitignore.read_text() if gitignore.exists() else ''
         gitignore.write_text(existing + GITIGNORE_CONTENT)
         _dedupe_gitignore(gitignore)
 
-        # 隔离敏感文件
         moved = quarantine_sensitive_files(target)
         if moved:
             print(f"  ✓ 隔离 {len(moved)} 个敏感文件: {', '.join(moved)}")
         print()
 
-        # Step 2.5: 版本号 bump（patch +1）
+        # Step 2.5: 版本号 bump
         print("■ Step 2.5: 版本号 bump")
         cur_ver = get_skill_version(skill_dir)
-        major, minor, patch = map(int, cur_ver.split('.'))
-        new_ver = f"{major}.{minor}.{patch + 1}"
         work_skill_md = target / 'SKILL.md'
-        bump_version_in_workdir(work_skill_md, new_ver)
+        content = work_skill_md.read_text(encoding='utf-8', errors='ignore')
+        updated_content, new_ver = bump_version(content)
+        work_skill_md.write_text(updated_content, encoding='utf-8')
         print(f"  {cur_ver} → {new_ver}")
         print()
 
         # Step 3: git add + staged grep + commit + push
         print("■ Step 3: git add + staged grep + commit + push")
 
-        # 配置代理
+        default_branch = get_default_branch(user, repo, token)
+        _git_config(work_dir, 'user.email', 'hermes-agent@nomail')
+        _git_config(work_dir, 'user.name', 'Hermes Agent')
         for key in ['http.proxy', 'https.proxy']:
-            run(['git', 'config', key, 'http://127.0.0.1:7890'], cwd=work_dir)
+            _git_config(work_dir, key, 'http://127.0.0.1:7890')
 
-        run(['git', 'add', '.'], cwd=work_dir)
+        run(['git', 'add', '.'], cwd=work_dir, capture=False)
 
-        staged = run(['git', 'diff', '--cached', '--name-only'],
-                      cwd=work_dir, capture_output=True, text=True)
-        print(f"  staged 文件 ({len(staged.stdout.strip().splitlines())}): {staged.stdout.strip()[:200]}")
+        staged = run(['git', 'diff', '--cached', '--name-only'], cwd=work_dir)
+        file_count = len([l for l in staged.stdout.splitlines() if l.strip()])
+        print(f"  staged {file_count} 个文件")
 
         findings = stage_grep(work_dir)
         if findings:
@@ -362,72 +266,91 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
             sys.exit(1)
         print("  ✓ staged grep 无敏感信息")
 
-        commit_msg = f"feat: add {skill_name}"
-        run(['git', 'commit', '-m', commit_msg], cwd=work_dir)
+        commit_msg = f"feat: add {skill_name} v{new_ver}"
+        run(['git', 'commit', '-m', commit_msg], cwd=work_dir, capture=False)
         print(f"  ✓ commit: {commit_msg}")
 
-        # GIT_ASKPASS 推送
         askpass = Path('/tmp/git-askpass.sh')
         askpass.write_text(f'#!/bin/bash\necho "{token}"\n')
         askpass.chmod(0o700)
         env = os.environ.copy()
         env['GIT_ASKPASS'] = str(askpass)
 
-        default_branch = get_default_branch(work_dir, token, user, repo)
-        print(f"  ✓ 分支: {default_branch}")
-
         push = subprocess.run(
             ['git', 'push', 'origin', default_branch, '--force-with-lease'],
             cwd=work_dir, env=env, capture_output=True, text=True
         )
         if push.returncode != 0:
-            print(f"  ❌ push 失败: {push.stderr}")
+            print(f"  ❌ push 失败: {push.stderr[:300]}")
             sys.exit(1)
         print(f"  ✓ push 成功")
         print()
 
         # Step 4: 验证
         print("■ Step 4: 验证")
-        ok, msg = verify_published(user, repo, skill_name, token)
-        if ok:
-            print(f"  ✓ 发布成功: SHA {msg}")
-        else:
-            print(f"  ❌ 验证失败: {msg}")
-            sys.exit(1)
-
+        rev = subprocess.run(['git', '-C', str(work_dir), 'rev-parse', '--short', 'HEAD'],
+                           capture_output=True, text=True)
         commit_hash = rev.stdout.strip()
-        version = get_skill_version(skill_dir)
+        data = curl_get(
+            f'https://api.github.com/repos/{user}/{repo}/contents/{skill_name}/SKILL.md',
+            token
+        )
+        sha = data.get('sha', '')
+        if sha:
+            print(f"  ✓ 发布成功: SHA {sha}")
+        else:
+            print(f"  ❌ 验证失败: {data.get('message', 'no sha')}")
+            sys.exit(1)
 
         # Step 5: 更新 PUBLISHED.md
         print("■ Step 5: 更新 PUBLISHED.md")
-        _update_published_md(work_dir, skill_name, new_ver, commit_hash, user, repo)
-        print(f"  ✓ PUBLISHED.md 已更新")
+        published_path = work_dir / 'PUBLISHED.md'
+        today = time.strftime('%Y-%m-%d')
+        new_entry = f'| {skill_name} | {new_ver} | {today} | `{commit_hash}` |'
 
-        # 重新 add + commit + push PUBLISHED.md
-        run(['git', 'add', 'PUBLISHED.md'], cwd=work_dir)
-        commit_msg2 = f"chore: update PUBLISHED.md for {skill_name}"
-        run(['git', 'commit', '-m', commit_msg2], cwd=work_dir)
-        rev2 = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'],
-                              cwd=work_dir, capture_output=True, text=True)
-        commit_hash2 = rev2.stdout.strip()
+        if published_path.exists():
+            lines = published_path.read_text().splitlines()
+            found = False
+            new_lines = []
+            for line in lines:
+                if line.startswith(f'| {skill_name} |'):
+                    new_lines.append(new_entry)
+                    found = True
+                else:
+                    new_lines.append(line)
+            if not found:
+                new_lines.extend(['', new_entry])
+            published_path.write_text('\n'.join(new_lines) + '\n')
+        else:
+            published_path.write_text(
+                '# Published Skills\n\n'
+                '| Skill | Version | Published | Commit |\n'
+                '|-------|---------|-----------|--------|\n'
+                f'{new_entry}\n'
+            )
 
+        run(['git', 'add', 'PUBLISHED.md'], cwd=work_dir, capture=False)
+        run(['git', 'commit', '-m', f'chore: update PUBLISHED.md for {skill_name}'],
+            cwd=work_dir, capture=False)
         push2 = subprocess.run(
             ['git', 'push', 'origin', default_branch, '--force-with-lease'],
             cwd=work_dir, env=env, capture_output=True, text=True
         )
         if push2.returncode != 0:
-            print(f"  ⚠ PUBLISHED.md push 失败（不影响主发布）: {push2.stderr}")
+            print(f"  ⚠ PUBLISHED.md push 失败（不影响主发布）: {push2.stderr[:200]}")
         else:
+            rev2 = subprocess.run(['git', '-C', str(work_dir), 'rev-parse', '--short', 'HEAD'],
+                                capture_output=True, text=True)
+            commit_hash2 = rev2.stdout.strip()
             print(f"  ✓ PUBLISHED.md push 成功 ({commit_hash2})")
         print()
 
         print()
         print("=== 发布完成 ===")
-        print(f"Skill: {skill_name}")
-        print(f"Commit: {commit_hash} — {commit_msg}")
-        print(f"PUBLISHED.md: {commit_hash2}")
-        print(f"地址: https://github.com/{user}/{repo}/tree/{default_branch}/{skill_name}")
-        print(f"验证: ✓ PASS")
+        print(f"Skill : {skill_name} v{new_ver}")
+        print(f"Commit: {commit_hash}")
+        print(f"地址 : https://github.com/{user}/{repo}/tree/{default_branch}/{skill_name}")
+        print(f"验证 : ✓ PASS")
 
     finally:
         if work_dir.exists():
@@ -437,12 +360,11 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
 
 
 def main():
-    import argparse
     parser = argparse.ArgumentParser(description='Hermes Skill 发布工具')
     parser.add_argument('skill_name', help='Skill 名称')
     parser.add_argument('--user', default='buwenzheng', help='GitHub 用户名')
     parser.add_argument('--repo', default='hermes-skills', help='GitHub 仓库名')
-    parser.add_argument('--skill-dir', help='本地 skill 目录路径（默认 ~/.hermes/skills/<name>）')
+    parser.add_argument('--skill-dir', help='本地 skill 目录（默认 ~/.hermes/skills/<name>）')
     parser.add_argument('--token', help='GitHub Token（默认从 GITHUB_TOKEN 环境变量读取）')
     args = parser.parse_args()
 
@@ -451,7 +373,8 @@ def main():
         print("❌ 缺少 GITHUB_TOKEN，请设置环境变量或传 --token 参数")
         sys.exit(1)
 
-    skill_dir = Path(args.skill_dir) if args.skill_dir else Path.home() / '.hermes' / 'skills' / args.skill_name
+    skill_dir = Path(args.skill_dir) if args.skill_dir else \
+        Path.home() / '.hermes' / 'skills' / args.skill_name
     if not skill_dir.exists():
         print(f"❌ Skill 目录不存在: {skill_dir}")
         sys.exit(1)

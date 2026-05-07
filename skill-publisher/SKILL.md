@@ -1,6 +1,6 @@
 ---
 name: skill-publisher
-description: Use when the user asks to publish a local Hermes skill to GitHub. Reads the audit report from skill-audit, and only proceeds if the result is APPROVED. Performs git add, staged grep check, commit, and token-authenticated push. Triggered manually — never automated.
+description: Use when the user asks to publish a local Hermes skill to GitHub. Reads the audit report from skill-audit, and only proceeds if the result is APPROVED. Performs git clone, sensitive file cleanup, git add, staged grep check, commit, and token-authenticated push. Triggered manually — never automated.
 version: 1.0.0
 author: Hermes Agent
 license: MIT
@@ -52,29 +52,45 @@ required_environment_variables:
 ```
 确认 skill-audit APPROVED
     ↓
-Step 1: 写入 .gitignore（在 git add 前）
+Step 1: 确认仓库存在
     ↓
-Step 2: git add + staged grep 二次确认
-    ↓ 仍有敏感 → 中断
-Step 3: git commit + push 到 GitHub
+Step 2: clone + 复制 skill + .gitignore
+    ↓
+Step 3: git add + staged grep 二次确认 + commit + push
     ↓
 Step 4: 验证（curl GitHub API 确认文件存在）
 ```
 
 ---
 
-## Step 1: 写入 .gitignore
+## Step 1: 确认仓库存在
 
-**必须在 git add 前写入**，否则敏感文件进暂存区后即使加 .gitignore 也无法从历史清除。
+```bash
+REPO_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" \
+  -H "Authorization: token ${GITHUB_TOKEN}" \
+  "https://api.github.com/repos/${USER}/${REPO}")
+if [ "$REPO_EXISTS" != "200" ]; then
+  echo "仓库不存在，请先在 GitHub 上创建 ${USER}/${REPO}"
+  exit 1
+fi
+```
 
-**用 `>>` 追加，不覆盖**：
+---
+
+## Step 2: clone + 复制 + .gitignore
 
 ```bash
 WORK_DIR="/tmp/${SKILL_NAME}-push"
 rm -rf "$WORK_DIR"
-mkdir -p "$WORK_DIR"
 
-# 追加 .gitignore（先加空行避免粘连）
+# clone（要求目标目录不存在或为空）
+git clone --depth 1 "https://github.com/${USER}/${REPO}.git" "$WORK_DIR"
+
+# 复制 skill 到临时目录（平铺结构）
+mkdir -p "$WORK_DIR/${SKILL_NAME}"
+cp -r ~/.hermes/skills/${SKILL_NAME}/. "$WORK_DIR/${SKILL_NAME}/"
+
+# 追加 .gitignore（clone 后再写，避免覆盖）
 echo "" >> "$WORK_DIR/.gitignore"
 cat >> "$WORK_DIR/.gitignore" << 'EOF'
 # 敏感文件
@@ -88,71 +104,40 @@ cat >> "$WORK_DIR/.gitignore" << 'EOF'
 # OS
 .DS_Store
 EOF
+
+# 在临时目录中隔离敏感文件（不碰用户原始目录）
+QUARANTINE="/tmp/skill-publisher-quarantine-$(date +%s)"
+mkdir -p "$QUARANTINE"
+find "$WORK_DIR/${SKILL_NAME}" -name "*_config.json" -type f -exec mv {} "$QUARANTINE/" \;
+find "$WORK_DIR/${SKILL_NAME}" -name "*_cache.json" -type f -exec mv {} "$QUARANTINE/" \;
+find "$WORK_DIR/${SKILL_NAME}" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+find "$WORK_DIR/${SKILL_NAME}" -name "*.pyc" -type f -exec mv {} "$QUARANTINE/" \;
+find "$WORK_DIR/${SKILL_NAME}" -name "*.pyo" -type f -exec mv {} "$QUARANTINE/" \;
+find "$WORK_DIR/${SKILL_NAME}" -name ".env" -type f -exec mv {} "$QUARANTINE/" \;
+find "$WORK_DIR/${SKILL_NAME}" -name "*.log" -type f -exec mv {} "$QUARANTINE/" \;
+find "$WORK_DIR/${SKILL_NAME}" -name "credentials.json" -type f -exec mv {} "$QUARANTINE/" \;
 ```
 
 ---
 
-## Step 2: git add + 二次确认
+## Step 3: git add + 二次确认 + commit + push
 
 ```bash
 cd "$WORK_DIR"
 git add .
 git diff --cached --name-only | head -50
 
-# 只检查 staged 的代码文件，排除 markdown
-STAGED_CODE=$(git diff --cached --name-only | grep -iE '\.(py|json|sh|yaml|yml|env|toml|txt|conf)$' || true)
-[ -z "$STAGED_CODE" ] && echo "无代码文件需要扫描" && exit 0
+# 扫描所有 staged 文件（代码 + README.md），排除 SKILL.md 自身
+# SKILL.md 已在 skill-audit Step 1 扫描过，此处只做兜底
+STAGED_ALL=$(git diff --cached --name-only | grep -v '^SKILL\.md$' || true)
+[ -z "$STAGED_ALL" ] && echo "无文件需要扫描" && exit 0
 
 while read f; do
   grep -nE "ghp_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}|sk-[a-zA-Z0-9]{48}|sk-proj-[a-zA-Z0-9]{48,}|sk-ant-[a-zA-Z0-9]{32,}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|AccountKey=[a-zA-Z0-9+/=]{88}|eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*|token\s*[:=]\s*[\"'][a-zA-Z0-9_-]{16,}[\"']|api[_-]?key\s*[:=]\s*[\"'][a-zA-Z0-9_-]{16,}[\"']|password\s*[:=]\s*[\"'][^\"']{8,}[\"']" "$f" && {
     echo "FAIL: sensitive data in $f"
     exit 1
   }
-done <<< "$STAGED_CODE"
-```
-
-> **pattern 必须和 skill-audit Step 1 完全一致，漏任何一个都是漏洞。**
-
----
-
-## Step 3: GitHub 发布
-
-### 3.1 确认仓库存在
-
-```bash
-REPO_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" \
-  -H "Authorization: token ${GITHUB_TOKEN}" \
-  "https://api.github.com/repos/${USER}/${REPO}")
-if [ "$REPO_EXISTS" != "200" ]; then
-  echo "仓库不存在，请先在 GitHub 上创建 ${USER}/${REPO}"
-  exit 1
-fi
-```
-
-### 3.2 clone + 复制 skill
-
-```bash
-git clone --depth 1 "https://github.com/${USER}/${REPO}.git" "$WORK_DIR"
-mkdir -p "$WORK_DIR/${SKILL_NAME}"
-cp -r ~/.hermes/skills/${SKILL_NAME}/. "$WORK_DIR/${SKILL_NAME}/"
-```
-
-### 3.3 commit + push
-
-```bash
-cd "$WORK_DIR"
-git add .
-git diff --cached --name-only
-
-# 二次确认（代码文件完整 pattern）
-STAGED_CODE=$(git diff --cached --name-only | grep -iE '\.(py|json|sh|yaml|yml|env|toml|txt|conf)$' || true)
-[ -z "$STAGED_CODE" ] && echo "无代码文件需要扫描" && exit 0
-while read f; do
-  grep -nE "ghp_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}|sk-[a-zA-Z0-9]{48}|sk-proj-[a-zA-Z0-9]{48,}|sk-ant-[a-zA-Z0-9]{32,}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|AccountKey=[a-zA-Z0-9+/=]{88}|eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*|token\s*[:=]\s*[\"'][a-zA-Z0-9_-]{16,}[\"']|api[_-]?key\s*[:=]\s*[\"'][a-zA-Z0-9_-]{16,}[\"']|password\s*[:=]\s*[\"'][^\"']{8,}[\"']" "$f" && {
-    echo "FAIL: sensitive data in $f"
-    exit 1
-  }
-done <<< "$STAGED_CODE"
+done <<< "$STAGED_ALL"
 
 git commit -m "feat: add ${SKILL_NAME}"
 
@@ -164,8 +149,11 @@ echo "${GITHUB_TOKEN}"
 EOF
 chmod 700 /tmp/git-askpass.sh
 
-# 本地检测分支名，不走网络
-DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || echo "main")
+# 多层 fallback 检测分支名（--depth 1 时 symbolic-ref 可能失效）
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(git remote show origin 2>/dev/null | awk '/HEAD branch/ {print $NF}')
+[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH="main"
+
 git push origin "$DEFAULT_BRANCH" --force-with-lease
 ```
 
@@ -211,15 +199,19 @@ Skill: ${SKILL_NAME}
 
 2. **audit 后改了代码** — 任何代码改动都必须重新跑 skill-audit。
 
-3. **staged grep pattern 不完整** — 必须和 skill-audit Step 1 完全一致。
+3. **clone 前写 .gitignore** — `git clone` 要求目标目录不存在或为空，必须先 clone 再写 .gitignore。
 
-4. **`echo | while read` subshell exit** — `exit 1` 只杀 subshell，必须用 `while read ... done <<< "$VAR"`。
+4. **staged grep 只扫代码文件** — README.md 也可能含 token，必须扫描所有 staged 文件（除 SKILL.md 外）。
 
-5. **GIT_ASKPASS 脚本权限不足** — 必须 `chmod 700`，`600` 缺执行位。
+5. **`echo | while read` subshell exit** — `exit 1` 只杀 subshell，必须用 `while read ... done <<< "$VAR"`。
 
-6. **token 嵌入 remote URL** — 禁止 `https://token@github.com`，用 GIT_ASKPASS。
+6. **GIT_ASKPASS 脚本权限不足** — 必须 `chmod 700`，`600` 缺执行位。
 
-7. **用 `--force` 而非 `--force-with-lease`** — 直接 force 会抹掉远程其他内容。
+7. **token 嵌入 remote URL** — 禁止 `https://token@github.com`，用 GIT_ASKPASS。
+
+8. **用 `--force` 而非 `--force-with-lease`** — 直接 force 会抹掉远程其他内容。
+
+9. **DEFAULT_BRANCH 在 shallow clone 下失效** — `git symbolic-ref` 在 `--depth 1` 时可能失败，必须多层 fallback。
 
 ---
 
@@ -229,3 +221,4 @@ Skill: ${SKILL_NAME}
 - 审核后改代码未重新审核禁止发布
 - 禁止跳过 staged grep 二次确认
 - 禁止 token 写入 .git/config
+- 禁止在 .gitignore 就绪前执行 git add

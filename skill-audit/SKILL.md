@@ -1,6 +1,6 @@
 ---
 name: skill-audit
-description: Use when the user asks to audit, scan, or review a local Hermes skill for security and format compliance. Performs security scan, format review, sensitive data removal, and outputs a detailed audit report. Triggered manually — never automated.
+description: Use when the user asks to audit, scan, or review a local Hermes skill for security and format compliance. Performs security scan, format review, outputs a detailed audit report, and suggests cleanup actions for sensitive files. Triggered manually — never automated.
 version: 1.0.0
 author: Hermes Agent
 license: MIT
@@ -12,7 +12,7 @@ metadata:
 
 # Skill 安全审核工具
 
-对本地 skill 进行安全扫描 + 格式审核，输出详细报告。不涉及任何 git 操作，只读检查。
+对本地 skill 进行安全扫描 + 格式审核，输出详细报告。**不修改本地文件**，只做检测和给出清理建议。隔离操作由 skill-publisher 在临时目录中自动处理。
 
 ## 何时触发
 
@@ -150,42 +150,29 @@ SKILL.md 正文（不含 frontmatter）必须包含：
 
 ---
 
-## Step 3: 敏感剥离
+## Step 3: 敏感文件报告
 
-### 3.1 隔离敏感文件
+**不修改本地文件**，只列出建议清理的文件，由用户确认或交给 skill-publisher 处理：
 
 ```bash
-QUARANTINE="/tmp/skill-quarantine-$(date +%s)"
-mkdir -p "$QUARANTINE"
-
-# 移到隔离区
-find . -name "*_config.json" -type f -exec mv {} "$QUARANTINE/" \;
-find . -name "*_cache.json" -type f -exec mv {} "$QUARANTINE/" \;
-find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
-find . -name "*.pyc" -type f -exec mv {} "$QUARANTINE/" \;
-find . -name "*.pyo" -type f -exec mv {} "$QUARANTINE/" \;
-find . -name ".env" -type f -exec mv {} "$QUARANTINE/" \;
-find . -name "*.log" -type f -exec mv {} "$QUARANTINE/" \;
-find . -name "credentials.json" -type f -exec mv {} "$QUARANTINE/" \;
-
-echo "已隔离至 $QUARANTINE"
+echo "⚠️ 以下文件建议清理（发布前由 skill-publisher 自动处理）："
+find . -name "*_config.json" -type f
+find . -name "*_cache.json" -type f
+find . -name "__pycache__" -type d
+find . -name "*.pyc" -type f
+find . -name ".env" -type f
+find . -name "*.log" -type f
+find . -name "credentials.json" -type f
+echo "skill-publisher 会在临时目录中自动隔离并排除这些文件"
 ```
 
-### 3.2 模板化
+### 3.2 模板化建议
 
-如果有 `*_config.json` 存在但内容合理（含占位符），可转为 `<name>.template.json` 保留结构。
+如果 `*_config.json` 内容合理（含占位符），可以转为 `<name>.template.json` 保留结构。
 
-### 3.3 凭证替换
+### 3.3 凭证替换建议
 
-scripts/*.py 中的硬编码凭证替换为 `${VAR_NAME}`：
-
-```python
-# 替换前
-api_key = "***"
-
-# 替换后
-api_key = "${API_KEY}"
-```
+scripts/*.py 中若有硬编码凭证，建议替换为 `${VAR_NAME}`。
 
 ---
 
@@ -198,6 +185,10 @@ api_key = "${API_KEY}"
 ## 输出模板
 
 审核完成后，向用户报告：
+
+```bash
+VERSION=$(grep -m1 '^version:' ~/.hermes/skills/${SKILL_NAME}/SKILL.md | awk '{print $2}')
+```
 
 ```
 === Skill 安全审核报告 ===
@@ -213,10 +204,10 @@ Skill: ${SKILL_NAME}
   - README.md: 存在 / 缺失
   - 正文结构: 完整 / 缺失 <章节>
 
-■ 敏感剥离:
-  - 隔离文件: <数量> 个
-  - 模板化: <数量> 个
-  - 凭证替换: <数量> 处
+■ 敏感文件清理建议:
+  - 建议隔离: <文件列表>
+  - 建议模板化: <文件列表>
+  - 建议替换凭证: <位置>
 
 ■ 最终判定: APPROVED / REJECTED
   - APPROVED → 可继续发布流程（运行 skill-publisher）
@@ -229,15 +220,15 @@ Skill: ${SKILL_NAME}
 
 1. **跳过硬扫直接发布** — 安全扫描是强制性前置步骤，任何时候都不可跳过。
 
-2. **白名单含敏感词** — 白名单只能排除文档类文字（`${`、`#`、`prompt`、`help`、`description` 等）。`ghp_`/`sk-`/`AKIA` 等真实泄露模式严禁加入白名单。
+2. **白名单含敏感词** — 白名单只能排除文档类文字（`${`、`#`、`prompt`、`help`、`description` 等）。`ghp_`/`sk-`/`AKIA` 等真实泄露模式严禁加入白名单。**注意：ERE 中 `|` 是或逻辑，不是字面量 `|`。**
 
-3. **Step 6 二次确认 pattern 不完整** — 必须和 Step 1 使用完全相同的完整 12 个 pattern。漏掉任何一个都会使二次确认形同虚设。
+3. **audit 修改本地文件** — audit 只检测不修改。隔离/剥离由 skill-publisher 在临时目录中处理，否则会破坏用户原始文件。
 
-4. **`echo | while read` 的 subshell exit 陷阱** — `exit 1` 在管道 subshell 里只杀子 shell，主脚本继续执行。必须用 `while read ... done <<< "$VAR"`。
+4. **审核通过后手动修改了文件** — 审核通过后若又改了代码，必须重新跑审核。
 
-5. **审核通过后手动修改了文件** — 审核通过后若又改了代码，必须重新跑审核。
+5. **macOS grep 不支持 `\x27`** — 单引号转义在 macOS BSD grep 里不工作，改用 `[^"']`。
 
-6. **macOS grep 不支持 `\x27`** — 单引号转义在 macOS BSD grep 里不工作，改用 `[^"']`。
+6. **password pattern 里的 `[^"'\']`** — 在 shell 单引号中 `\'` 表示转义的单引号字符，实际解析为排除了 `\` 和单引号，可能截断含反斜杠的密码匹配。建议统一用 `[^"']`。
 
 ---
 

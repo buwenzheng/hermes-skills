@@ -16,24 +16,18 @@ required_environment_variables:
 
 ## INT 初始化步骤（新用户首次使用）
 
-> ⚠️ `siyuan_config.json` 不随 skill 发布（禁止文件），请勿用 `init` 命令写入配置。
-
-1. 设置环境变量（推荐）：
+1. 运行初始化命令：
    ```bash
-   export SIYUAN_API_URL=http://127.0.0.1:6806
-   export SIYUAN_API_TOKEN=你的_token
+   python3 scripts/siyuan_api.py init <API URL> <Token>
    ```
-2. 验证连接（无需配置文件，直接调 API）：
+   例如：
    ```bash
-   unset http_proxy https_proxy ALL_PROXY
-   curl -X POST "${SIYUAN_API_URL}/api/system/version" \
-     -H "Authorization: Token ${SIYUAN_API_TOKEN}" -d '{}'
+   python3 scripts/siyuan_api.py init http://127.0.0.1:6806 your_token_here
    ```
-   成功返回 `{"code":0,"data":"3.6.5"}` 表示正常。
-3. 列出笔记本验证全流程：
-   ```bash
-   python3 scripts/siyuan_api.py list_notebooks
-   ```
+   初始化会自动：
+   - 写入 `~/.config/siyuan/config`（配置文件，不随 skill 发布）
+   - 写入 `~/.config/siyuan/cache.json`（缓存文件）
+   - 验证连接并预热缓存
 
 > **注意**：如果远程访问思源，API URL 应填写实际可访问的地址（如 `http://192.168.1.100:6806`），确保Hermes所在机器能连通该端口。
 
@@ -57,7 +51,7 @@ required_environment_variables:
 1. **`/api/ping` 不存在**：思源没有 `/api/ping` 端点，验证连接用 `/api/system/version`，返回 `{"code":0,"data":"3.6.5"}` 表示正常。
 2. **`get_file` ≠ 读文档内容**：两者是两套路径系统。读文档正文用 `export_md <文档ID>`；`get_file` 用的是工作区物理路径 `/data/<笔记本ID>/<文档路径>.sy`。
 3. **`create_doc` 多行内容**：命令行传入多行内容时换行符会被转义。若需多行内容，先 `create_doc` 创建空文档，再用 `update_block` 写入。
-4. **缓存不随 skill 发布**：`siyuan_cache.json` 是本地缓存文件，不随 skill 发布。脚本默认使用本地缓存（`~/.hermes/skills/siyuan/scripts/siyyuan_cache.json`），用 `--no-cache` 可强制直连 API。
+4. **缓存不随 skill 发布**：`~/.config/siyuan/cache.json` 是本地缓存文件，不随 skill 发布。脚本默认使用本地缓存，用 `--no-cache` 可强制直连 API。
 5. **Terminal 与 execute_code 沙箱视图不一致**：始终用 terminal 工具操作脚本文件，不要依赖 execute_code 沙箱读写同一路径。
 
 ## 核心概念
@@ -120,6 +114,8 @@ required_environment_variables:
 | `SIYUAN_API_TOKEN` | 在思源设置 → 关于 → API Token 中获取 |
 
 > ⚠️ `siyuan_config.json` 不随 skill 发布（禁止文件），不要把 token 写进配置文件。
+
+配置文件位置：`~/.config/siyuan/config`（init 时自动创建，不随 skill 发布）。
 
 如需使用配置文件（仅本地临时用途），参考 `scripts/siyuan_config.json.template`：
 

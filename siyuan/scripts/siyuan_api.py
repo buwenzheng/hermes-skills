@@ -19,10 +19,12 @@ import os
 import sys
 import requests
 import time
+import shutil
 from pathlib import Path
 
-CONFIG_PATH = Path.home() / ".hermes/skills/siyuan/scripts/siyuan_config.json"
-CACHE_PATH  = Path.home() / ".hermes/skills/siyuan/scripts/siyuan_cache.json"
+CONFIG_DIR  = Path.home() / ".config" / "siyuan"
+CONFIG_PATH = CONFIG_DIR / "config"
+CACHE_PATH  = CONFIG_DIR / "cache.json"
 DEFAULT_TTL = 14 * 24 * 3600  # notebook list 缓存两周
 
 
@@ -740,7 +742,12 @@ def cmd_push_err_msg(config, msg, timeout="7s"):
 
 def cmd_init(config, api_url, api_token):
     """初始化：写入配置 + 验证连接 + 预热缓存"""
-    import shutil
+    # 检查是否已有配置，防止覆盖
+    if CONFIG_PATH.exists():
+        print(f"⚠️  配置已存在: {CONFIG_PATH}", file=sys.stderr)
+        print("如需重新初始化，请先删除配置文件：", file=sys.stderr)
+        print(f"  rm -rf {CONFIG_DIR}", file=sys.stderr)
+        sys.exit(1)
 
     # 1. 写入配置
     new_config = {
@@ -748,6 +755,7 @@ def cmd_init(config, api_url, api_token):
         "api_token": api_token,
         "local_path": config.get("local_path", ""),
     }
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(new_config, f, ensure_ascii=False, indent=2)
 

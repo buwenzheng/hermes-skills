@@ -176,6 +176,23 @@ SKILL.md 正文（不含 frontmatter）必须包含：
 | `## When to Use` 或 `## 何时使用` | 触发条件 |
 | `## Common Pitfalls` 或 `## 避坑` | 常见错误 |
 
+### 2.4 配置文件路径规约
+
+**配置文件和缓存文件必须存放在 skill 目录外**，禁止放在 `~/.hermes/skills/<name>/` 下（会被发布流程删除）。
+
+| 类型 | 正确路径 | 说明 |
+|------|----------|------|
+| 配置文件 | `~/.config/<skill-name>/config` | init 时自动创建 |
+| 缓存文件 | `~/.config/<skill-name>/cache.json` | 本地缓存 |
+
+错误示例：`~/.hermes/skills/<name>/scripts/*_config.json`（会随 skill 发布导致 token 丢失）
+
+正确示例：`~/.config/siyuan/config`（MoviePilot 等 skill 均采用此约定）
+
+**init 命令要求**：
+- 写入配置前检查是否已存在，存在则提示用户先删除：`rm -rf ~/.config/<skill-name>`
+- 创建配置目录：`CONFIG_DIR.mkdir(parents=True, exist_ok=True)`
+
 ---
 
 ## Step 3: 敏感文件报告
@@ -242,8 +259,6 @@ Skill: ${SKILL_NAME}
   - REJECTED → <失败原因>，请修复后重新审核
 ```
 
----
-
 ## 常见陷阱（Common Pitfalls）
 
 1. **跳过硬扫直接发布** — 安全扫描是强制性前置步骤，任何时候都不可跳过。
@@ -255,6 +270,10 @@ Skill: ${SKILL_NAME}
 4. **审核通过后手动修改了文件** — 审核通过后若又改了代码，必须重新跑审核。
 
 5. **禁止文件检查未中断** — `find` 命令列出文件后必须 `exit 1`，否则脚本继续执行并可能错误给出 APPROVED。
+
+6. **token/api_key pattern 漏掉双引号格式** — `token\s*[:=]\s*['\'']...` 只匹配单引号包裹，漏掉 `siyuan_config.json` 类场景。必须同时覆盖单引号和双引号两种格式：`token\s*[:=]\s*"..."`。
+
+7. **audit_scan.py 不支持单文件路径** — 脚本依赖目录结构（需要读到 `SKILL.md`、`README.md`），传单个 `.py` 文件路径会错误地扫描其父目录。审计时必须传**目录路径**。
 
 ---
 
@@ -264,17 +283,3 @@ Skill: ${SKILL_NAME}
 - `references/github-proxy.md` — GitHub 操作代理配置
 - `references/git-token-security.md` — Token 安全推送方式对比 + 泄露应急
 - `scripts/audit_scan.py` — Python 自动化扫描脚本（推荐优先使用）
-
-## 常见陷阱（Common Pitfalls）
-
-1. **跳过硬扫直接发布** — 安全扫描是强制性前置步骤，任何时候都不可跳过。
-
-2. **白名单含敏感词** — 白名单只能排除文档类文字（`${`、`#`、`prompt`、`help`、`description` 等）。`ghp_`/`sk-`/`AKIA` 等真实泄露模式严禁加入白名单。
-
-3. **audit 修改本地文件** — audit 只检测不修改。隔离/剥离由 skill-publisher 在临时目录中处理，否则会破坏用户原始文件。
-
-4. **审核通过后手动修改了文件** — 审核通过后若又改了代码，必须重新跑审核。
-
-5. **禁止文件检查未中断** — `find` 命令列出文件后必须 `exit 1`，否则脚本继续执行并可能错误给出 APPROVED。
-
-6. **token/api_key pattern 漏掉双引号格式** — `token\s*[:=]\s*['\'']...` 只匹配单引号包裹，漏掉 `siyuan_config.json` 类场景。必须同时覆盖单引号和双引号两种格式：`token\s*[:=]\s*"..."`

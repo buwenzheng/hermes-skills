@@ -203,6 +203,82 @@ def _dedupe_gitignore(gitignore_path: Path):
     gitignore_path.write_text('\n'.join(deduped) + '\n')
 
 
+def get_skill_version(skill_dir: Path) -> str:
+    """从 SKILL.md frontmatter 提取 version，没有则用 1.0.0"""
+    skill_md = skill_dir / 'SKILL.md'
+    if not skill_md.exists():
+        return '1.0.0'
+    content = skill_md.read_text(encoding='utf-8', errors='ignore')
+    m = re.search(r'^version:\s*(\S+)', content, re.MULTILINE)
+    return m.group(1) if m else '1.0.0'
+
+
+def bump_version_in_workdir(work_skill_md: Path, new_version: str) -> None:
+    """将克隆目录里的 SKILL.md version 字段更新为 new_version"""
+    if not work_skill_md.exists():
+        return
+    content = work_skill_md.read_text(encoding='utf-8', errors='ignore')
+    updated = re.sub(
+        r'^version:\s*\S+', f'version: {new_version}', content, flags=re.MULTILINE
+    )
+    work_skill_md.write_text(updated, encoding='utf-8')
+
+
+def _fetch_published_md(user: str, repo: str, token: str) -> str:
+    """从 GitHub 获取当前 PUBLISHED.md 内容，不存在则返回空"""
+    result = subprocess.run(
+        ['curl', '-s',
+         '-H', f'Authorization: token {token}',
+         f'https://api.github.com/repos/{user}/{repo}/contents/PUBLISHED.md'],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        return ''
+    try:
+        data = json.loads(result.stdout)
+        import base64
+        return base64.b64decode(data.get('content', '')).decode('utf-8', errors='ignore')
+    except Exception:
+        return ''
+
+
+def _update_published_md(work_dir: Path, skill_name: str, version: str,
+                           commit_hash: str, user: str, repo: str) -> bool:
+    """
+    更新本地 work_dir 中的 PUBLISHED.md：
+    - skill 已存在 → 更新 version 和 commit
+    - skill 不存在 → 追加新行
+    返回 True 表示有更新
+    """
+    published_path = work_dir / 'PUBLISHED.md'
+    today = time.strftime('%Y-%m-%d')
+    content = _fetch_published_md(user, repo, token)
+    lines = content.splitlines() if content else []
+
+    header = ['# Published Skills', '', '| Skill | Version | Published | Commit |',
+              '|-------|---------|-----------|--------|']
+    new_entry = f'| {skill_name} | {version} | {today} | `{commit_hash}` |'
+
+    # 解析现有行，找 skill
+    found = False
+    new_lines = []
+    for line in lines:
+        if line.startswith(f'| {skill_name} |'):
+            new_lines.append(new_entry)
+            found = True
+        else:
+            new_lines.append(line)
+
+    if not found:
+        # 追加
+        new_lines = header + [new_entry, '']
+    else:
+        new_lines = new_lines + ['']
+
+    published_path.write_text('\n'.join(new_lines))
+    return True
+
+
 def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
     work_dir = Path(f'/tmp/{skill_name}-push')
     quarantine = Path(f'/tmp/skill-publisher-quarantine-{int(time.time())}')
@@ -252,6 +328,16 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
         moved = quarantine_sensitive_files(target)
         if moved:
             print(f"  ✓ 隔离 {len(moved)} 个敏感文件: {', '.join(moved)}")
+        print()
+
+        # Step 2.5: 版本号 bump（patch +1）
+        print("■ Step 2.5: 版本号 bump")
+        cur_ver = get_skill_version(skill_dir)
+        major, minor, patch = map(int, cur_ver.split('.'))
+        new_ver = f"{major}.{minor}.{patch + 1}"
+        work_skill_md = target / 'SKILL.md'
+        bump_version_in_workdir(work_skill_md, new_ver)
+        print(f"  {cur_ver} → {new_ver}")
         print()
 
         # Step 3: git add + staged grep + commit + push
@@ -309,13 +395,37 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
             print(f"  ❌ 验证失败: {msg}")
             sys.exit(1)
 
+        commit_hash = rev.stdout.strip()
+        version = get_skill_version(skill_dir)
+
+        # Step 5: 更新 PUBLISHED.md
+        print("■ Step 5: 更新 PUBLISHED.md")
+        _update_published_md(work_dir, skill_name, new_ver, commit_hash, user, repo)
+        print(f"  ✓ PUBLISHED.md 已更新")
+
+        # 重新 add + commit + push PUBLISHED.md
+        run(['git', 'add', 'PUBLISHED.md'], cwd=work_dir)
+        commit_msg2 = f"chore: update PUBLISHED.md for {skill_name}"
+        run(['git', 'commit', '-m', commit_msg2], cwd=work_dir)
+        rev2 = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'],
+                              cwd=work_dir, capture_output=True, text=True)
+        commit_hash2 = rev2.stdout.strip()
+
+        push2 = subprocess.run(
+            ['git', 'push', 'origin', default_branch, '--force-with-lease'],
+            cwd=work_dir, env=env, capture_output=True, text=True
+        )
+        if push2.returncode != 0:
+            print(f"  ⚠ PUBLISHED.md push 失败（不影响主发布）: {push2.stderr}")
+        else:
+            print(f"  ✓ PUBLISHED.md push 成功 ({commit_hash2})")
+        print()
+
         print()
         print("=== 发布完成 ===")
-        rev = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'],
-                              cwd=work_dir, capture_output=True, text=True)
-        commit_hash = rev.stdout.strip()
         print(f"Skill: {skill_name}")
         print(f"Commit: {commit_hash} — {commit_msg}")
+        print(f"PUBLISHED.md: {commit_hash2}")
         print(f"地址: https://github.com/{user}/{repo}/tree/{default_branch}/{skill_name}")
         print(f"验证: ✓ PASS")
 

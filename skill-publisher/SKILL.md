@@ -41,6 +41,16 @@ required_environment_variables:
    ```
 3. 确认目标 skill 已通过 `skill-audit` 审核（结果为 APPROVED）
 
+### 推荐方式：使用 Python 脚本
+
+```bash
+python3 ~/.hermes/skills/productivity/skill-publisher/scripts/publish_skill.py ${SKILL_NAME} --user ${USER} --repo ${REPO}
+# 示例
+python3 ~/.hermes/skills/productivity/skill-publisher/scripts/publish_skill.py siyuan --user buwenzheng --repo hermes-skills
+```
+
+脚本自动完成：clone → 隔离敏感文件 → git add → staged grep → commit → push → 验证。
+
 ---
 
 ## 前置检查

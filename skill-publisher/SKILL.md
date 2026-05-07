@@ -143,19 +143,25 @@ grep -rnE "token|api_key|ghp_|sk-|password\s*[:=]" . \
 | `metadata.hermes.tags` | 必须，非空数组 |
 | `required_environment_variables` | 如 skill 涉及 API key 必须声明 |
 
-### 2.2 目录结构检查
+### 1.2 GitHub 目录结构（重要）
+
+**必须使用平铺结构，不沿用本地分类**：
 
 ```
-<skill-name>/
-├── SKILL.md           # 必须存在
-├── README.md          # 必须存在（给外部用户看的说明）
-├── references/        # 可选
-├── scripts/           # 可选
-├── templates/        # 可选
-└── assets/           # 可选
+hermes-skills-repo/
+├── .gitignore
+├── skill-publisher/
+│   ├── SKILL.md
+│   └── README.md
+├── siyuan/
+│   ├── SKILL.md
+│   └── README.md
+└── another-skill/
+    ├── SKILL.md
+    └── README.md
 ```
 
-README.md 如缺失 → 审核不通过（必须补充后才能发布）。
+每个 skill 一个根目录，`skills/category/skill-name/` 这种本地结构**不要照搬到 GitHub**。
 
 ### 2.3 正文内容检查
 
@@ -216,19 +222,22 @@ api_key = "${API_KEY}"
 
 **必须在 git add 前写入**，否则敏感文件进暂存区后即使加 .gitignore 也无法从历史清除。
 
-```gitignore
+**用 `>>` 追加，不要覆盖**，避免丢失仓库已有的 .gitignore 内容：
+
+```bash
+# 追加到 .gitignore（已有内容不会被覆盖）
+cat >> /tmp/${SKILL_NAME}-push/.gitignore << 'EOF'
 # 敏感文件
 **/*_config.json
 **/*_cache.json
 **/credentials.json
-
 # Python
 **/__pycache__/
 **/*.pyc
 **/*.pyo
-
 # OS
 .DS_Store
+EOF
 ```
 
 ---
@@ -238,7 +247,12 @@ api_key = "${API_KEY}"
 ```bash
 git add .
 git diff --cached --name-only | head -50
-git diff --cached | grep -iE "token|api_key|ghp_|sk-|password\s*[:=]" && echo "FAIL: sensitive data found in staged files" && exit 1
+
+# 只检查新增行（^+ ），排除删除行（^- ）和文档注释
+git diff --cached --no-color | grep '^+' | grep -v '^+++' | \
+  grep -iE "token|api_key|ghp_|sk-|password\s*[:=]" | \
+  grep -vE '(\$\{|#|description|prompt|help|prefix|Authorization|git remote|GITHUB_TOKEN|grep.*token|echo.*\$\{|cat.*EOF|旧方式|示例)' \
+  && echo "FAIL: sensitive data found in staged files" && exit 1
 ```
 
 **grep 有输出 → 中断，不发布。**
@@ -265,15 +279,66 @@ curl -s -X POST -H "Authorization: token ${GITHUB_TOKEN}" \
   https://api.github.com/user/repos | jq -r '.full_name // .message'
 ```
 
-### 7.3 推送
+### 7.3 推送到 GitHub
+
+**目录结构必须是 flat（平铺），每个 skill 一个根目录**：
+
+```
+hermes-skills-repo/
+├── .gitignore
+├── skill-name-1/
+│   ├── SKILL.md
+│   └── README.md
+└── skill-name-2/
+    ├── SKILL.md
+    └── README.md
+```
+
+推送步骤：
 
 ```bash
-cd /tmp/<skill-name>-publish
-git init
+# 1. clone 到临时目录（--depth 1 减少数据）
+git clone --depth 1 https://github.com/${USER}/hermes-skills.git /tmp/${SKILL_NAME}-push
+
+# 2. 创建 skill 目录（flat 结构，直接放根目录）
+mkdir -p /tmp/${SKILL_NAME}-push/${SKILL_NAME}
+cp -r ~/.hermes/skills/${SKILL_NAME}/* /tmp/${SKILL_NAME}-push/${SKILL_NAME}/
+
+# 3. .gitignore 追加（不要覆盖，用户可能已有自定义规则）
+cat >> /tmp/${SKILL_NAME}-push/.gitignore << 'EOF'
+# 敏感文件
+**/*_config.json
+**/*_cache.json
+**/credentials.json
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+# OS
+.DS_Store
+EOF
+
+# 4. git add → 二次确认（只检查新增行，过滤删除行和文档注释）→ commit → push
+cd /tmp/${SKILL_NAME}-push
 git add .
-git commit -m "feat: add <skill-name> skill"
-git remote add origin https://${GITHUB_TOKEN}@github.com/${USER}/hermes-skills.git
-git push origin main --force
+git diff --cached --name-only
+
+# 只检查新增行（^+ ），排除删除行（^- ）和文档文字
+git diff --cached --no-color | grep '^+' | grep -v '^+++' | \
+  grep -iE "token|api_key|ghp_|sk-|password\s*[:=]" | \
+  grep -vE '(\$\{|#|description|prompt|help|prefix|Authorization|git remote|GITHUB_TOKEN)' \
+  && echo "FAIL: sensitive data in staged files" && exit 1
+
+git commit -m "feat: add ${SKILL_NAME}"
+
+# 用 GIT_ASKPASS 方式推送，token 不写入 .git/config
+export GIT_ASKPASS=/tmp/git-askpass.sh
+cat > /tmp/git-askpass.sh << 'EOF'
+#!/bin/bash
+echo "${GITHUB_TOKEN}"
+EOF
+chmod +x /tmp/git-askpass.sh
+git push origin main --force-with-lease
 ```
 
 ---
@@ -307,7 +372,7 @@ curl -s -H "Authorization: token ${GITHUB_TOKEN}" \
 
 ## 常见陷阱（Common Pitfalls）
 
-1. **.gitignore 加在 git add 之后** — 敏感文件已进入暂存区，历史无法清除。必须先加 .gitignore 再 add。
+1. **把本地 `skills/category/skill-name/` 结构照搬到 GitHub** — 本地 skills 目录有分类，GitHub 上必须平铺，每个 skill 直接放在根目录。否则安装命令 `hermes skills install owner/repo/skill-name` 无法识别。
 
 2. **pre-add grep 太宽泛** — `${TOKEN}` 变量引用、`token` 字段说明文字会误报。用排除词（`${`、`#`、`prompt`、`help`）过滤后再判断。
 
@@ -315,7 +380,9 @@ curl -s -H "Authorization: token ${GITHUB_TOKEN}" \
 
 4. **推送后不验证** — 认为 push 成功就是成功了。必须 curl GitHub API 确认文件真的存在。
 
-5. **token 嵌在 remote URL 里 push** — push 完立刻检查 `git log` 确认 token 没残留在 commit 历史。若泄露立刻 `git filter-branch` + force push + 轮换 token。
+5. **token 嵌在 remote URL 里 push** — 旧方式 `https://token@github.com` 会把 token 永久写入 `.git/config`。改用 `GIT_ASKPASS` 方式推送（见 Step 7.3），token 不落盘。若已误用，立刻检查 `git log` 确认 token 没残留在 commit 历史，然后 `git filter-branch` + force push + 轮换 token。
+
+6. **用 `--force` 覆盖远程** — 直接 `--force` 会抹掉远程其他内容。改用 `--force-with-lease`，只有确认本地领先远程时才强制推送。
 
 ## 禁止项
 

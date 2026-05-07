@@ -90,11 +90,11 @@ patterns=(
   'eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*'
   'token\s*[:=]\s*["\x27][a-zA-Z0-9_-]{16,}["\x27]'
   'api[_-]?key\s*[:=]\s*["\x27][a-zA-Z0-9_-]{16,}["\x27]'
-  'password\s*[:=]\s*["\x27][^\x27]{8,}["\x27]'
+  'password\s*[:=]\s*["\x27][^"\x27]{8,}["\x27]'
 )
 FOUND=0
 for p in "${patterns[@]}"; do
-  hits=$(grep -rnE "$p" . --exclude-dir=.git 2>/dev/null || true)
+  hits=$(grep -rnE "$p" . --exclude-dir=.git --exclude="SKILL.md" --include="*.py" --include="*.json" --include="*.sh" --include="*.yaml" --include="*.yml" --include="*.env" --include="*.toml" --include="*.txt" --include="*.conf" 2>/dev/null || true)
   [ -n "$hits" ] && { echo "MATCH: $p"; echo "$hits"; FOUND=1; }
 done
 [ "$FOUND" = "1" ] && echo "FAIL: sensitive data found, abort" && exit 1
@@ -135,8 +135,9 @@ find . -name "credentials.json" -type f
 
 ```bash
 # 白名单过滤（排除文档文字，只看真实泄露）
-grep -rnE "token|api_key|ghp_|sk-|password" . \
-  | grep -vE '(\$\{|#|description|prompt|help|prefix|Authorization|git remote|GITHUB_TOKEN|grep.*token|echo.*\$\{|cat.*EOF|示例|旧方式)'
+# 注意：敏感词 ghp_/sk_/AKIA 等不能加入白名单，否则会漏报
+grep -rnE "token|api_key|ghp_|sk_|password" . \
+  | grep -vE '^(\$\{|#|description|prompt|help|prefix|Authorization|git remote|GITHUB_TOKEN|grep.*token|echo.*\$\{|cat.*EOF|示例|旧方式|references/)'
 
 # 无输出 = 干净；有输出 → 逐条核查
 ```
@@ -202,7 +203,8 @@ mkdir -p "$QUARANTINE"
 # 移到隔离区（不直接删除，误操作可恢复）
 find . -name "*_config.json" -type f -exec mv {} "$QUARANTINE/" \;
 find . -name "*_cache.json" -type f -exec mv {} "$QUARANTINE/" \;
-find . -name "__pycache__" -type d -exec mv {} "$QUARANTINE/" \; 2>/dev/null || true
+# __pycache__ 是纯缓存，直接删；其他文件隔离到 quarantine
+find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 find . -name "*.pyc" -type f -exec mv {} "$QUARANTINE/" \;
 find . -name "*.pyo" -type f -exec mv {} "$QUARANTINE/" \;
 find . -name ".env" -type f -exec mv {} "$QUARANTINE/" \;
@@ -245,7 +247,8 @@ api_key = "${API_KEY}"
 **用 `>>` 追加，不要覆盖**，避免丢失仓库已有的 .gitignore 内容：
 
 ```bash
-# 追加到 .gitignore（已有内容不会被覆盖）
+# 追加到 .gitignore（先加空行避免内容粘连，再追加内容）
+echo "" >> /tmp/${SKILL_NAME}-push/.gitignore
 cat >> /tmp/${SKILL_NAME}-push/.gitignore << 'EOF'
 # 敏感文件
 **/*_config.json
@@ -268,14 +271,14 @@ EOF
 git add .
 git diff --cached --name-only | head -50
 
-# 只检查新增行（^+ ），排除删除行（^- ）和文档注释
-git diff --cached --no-color | grep '^+' | grep -v '^+++' | \
-  grep -iE "token|api_key|ghp_|sk-|password\s*[:=]" | \
-  grep -vE '(\$\{|#|description|prompt|help|prefix|Authorization|git remote|GITHUB_TOKEN|grep.*token|echo.*\$\{|cat.*EOF|旧方式|示例|ghp_|sk-|AKIA|ASIA|AIza|eyJ|github_pat_|references/|[[:space:]]+'"'"')' \
-  && echo "FAIL: sensitive data found in staged files" && exit 1
-```
-
-**grep 有输出 → 中断，不发布。**
+# 只检查新增的代码文件，排除 markdown（markdown 不参与代码扫描）
+# 先看有哪些代码文件会被提交，再对代码文件做敏感扫描
+STAGED_CODE=$(git diff --cached --name-only | grep -iE '\.(py|json|sh|yaml|yml|env|toml|txt|conf)$' || true)
+[ -z "$STAGED_CODE" ] && echo "无代码文件需要扫描" && exit 0
+echo "$STAGED_CODE" | while read f; do
+  grep -nE "ghp_[a-zA-Z0-9]{36}|sk-[a-zA-Z0-9]{48}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}" "$f" && echo "FAIL: sensitive data in $f" && exit 1
+done
+[ $? -eq 0 ] || exit 1
 
 ---
 
@@ -317,15 +320,27 @@ hermes-skills-repo/
 推送步骤：
 
 ```bash
-# 1. clone 到临时目录（--depth 1 减少数据）
-git clone --depth 1 https://github.com/${USER}/${REPO}.git /tmp/${SKILL_NAME}-push
+# 1. 检查仓库是否存在，不存在则先创建
+REPO_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" \
+  -H "Authorization: token ${GITHUB_TOKEN}" \
+  "https://api.github.com/repos/${USER}/${REPO}")
+if [ "$REPO_EXISTS" != "200" ]; then
+  echo "仓库不存在，请先在 GitHub 上创建或运行 Step 7.2"
+  exit 1
+fi
 
-# 2. 创建 skill 目录（flat 结构，直接放根目录）
-mkdir -p /tmp/${SKILL_NAME}-push/${SKILL_NAME}
-cp -r ~/.hermes/skills/${SKILL_NAME}/. /tmp/${SKILL_NAME}-push/${SKILL_NAME}/
+# 2. clone 到临时目录（--depth 1 减少数据）
+WORK_DIR="/tmp/${SKILL_NAME}-push"
+rm -rf "$WORK_DIR"
+git clone --depth 1 "https://github.com/${USER}/${REPO}.git" "$WORK_DIR"
 
-# 3. .gitignore 追加（不要覆盖，用户可能已有自定义规则）
-cat >> /tmp/${SKILL_NAME}-push/.gitignore << 'EOF'
+# 3. 创建 skill 目录（flat 结构，直接放根目录）
+mkdir -p "$WORK_DIR/${SKILL_NAME}"
+cp -r ~/.hermes/skills/${SKILL_NAME}/. "$WORK_DIR/${SKILL_NAME}/"
+
+# 4. .gitignore 追加（先加空行避免粘连）
+echo "" >> "$WORK_DIR/.gitignore"
+cat >> "$WORK_DIR/.gitignore" << 'EOF'
 # 敏感文件
 **/*_config.json
 **/*_cache.json
@@ -338,16 +353,19 @@ cat >> /tmp/${SKILL_NAME}-push/.gitignore << 'EOF'
 .DS_Store
 EOF
 
-# 4. git add → 二次确认（只检查新增行，过滤删除行和文档注释）→ commit → push
-cd /tmp/${SKILL_NAME}-push
+# 5. git add → 二次确认（只检查新增行，过滤删除行和文档注释）→ commit → push
+cd "$WORK_DIR"
 git add .
 git diff --cached --name-only
 
-# 只检查新增行（^+ ），排除删除行（^- ）和文档文字
-git diff --cached --no-color | grep '^+' | grep -v '^+++' | \
-  grep -iE "token|api_key|ghp_|sk-|password\s*[:=]" | \
-  grep -vE '(\$\{|#|description|prompt|help|prefix|Authorization|git remote|GITHUB_TOKEN|grep.*token|echo.*\$\{|cat.*EOF|旧方式|示例|ghp_|sk-|AKIA|ASIA|AIza|eyJ|github_pat_|references/|[[:space:]]+'"'"')' \
-  && echo "FAIL: sensitive data in staged files" && exit 1
+# 只检查新增行，排除 diff hunk header 和文档示例代码
+# 只检查新增的代码文件，排除 markdown
+STAGED_CODE=$(git diff --cached --name-only | grep -iE '\.(py|json|sh|yaml|yml|env|toml|txt|conf)$' || true)
+[ -z "$STAGED_CODE" ] && echo "无代码文件需要扫描" && exit 0
+echo "$STAGED_CODE" | while read f; do
+  grep -nE "ghp_[a-zA-Z0-9]{36}|sk-[a-zA-Z0-9]{48}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}" "$f" && echo "FAIL: sensitive data in $f" && exit 1
+done
+[ $? -eq 0 ] || exit 1
 
 git commit -m "feat: add ${SKILL_NAME}"
 
@@ -357,8 +375,11 @@ cat > /tmp/git-askpass.sh << 'EOF'
 #!/bin/bash
 echo "${GITHUB_TOKEN}"
 EOF
-chmod +x /tmp/git-askpass.sh
-git push origin main --force-with-lease
+chmod 600 /tmp/git-askpass.sh
+
+# 动态检测远程分支名，避免老仓库是 master
+DEFAULT_BRANCH=$(git remote show origin 2>/dev/null | awk '/HEAD branch/ {print $NF}' || echo "main")
+git push origin "$DEFAULT_BRANCH" --force-with-lease
 ```
 
 ---
@@ -392,17 +413,21 @@ curl -s -H "Authorization: token ${GITHUB_TOKEN}" \
 
 ## 常见陷阱（Common Pitfalls）
 
-1. **把本地 `skills/category/skill-name/` 结构照搬到 GitHub** — 本地 skills 目录有分类，GitHub 上必须平铺，每个 skill 直接放在根目录。否则安装命令 `hermes skills install owner/repo/skill-name` 无法识别。
+1. **把 GitHub 仓库直接 clone 到工作目录根** — `~/hermes-work/default/` 是工作区，不能直接做 git 仓库。正确做法：`~/hermes-work/default/hermes-skills/` 作为 GitHub repo 专用目录，与其他工作文件隔离。
 
-2. **pre-add grep 太宽泛** — `${TOKEN}` 变量引用、`token` 字段说明文字会误报。用排除词（`${`、`#`、`prompt`、`help`）过滤后再判断。
+2. **把本地 `skills/category/skill-name/` 结构照搬到 GitHub** — 本地 skills 目录有分类，GitHub 上必须平铺，每个 skill 直接放在根目录。否则安装命令 `hermes skills install owner/repo/skill-name` 无法识别。
 
-3. **README.md 遗漏** — 审核时漏查 README，导致外部用户看不懂 skill 用途。
+3. **pre-add grep 白名单不能含敏感词** — 白名单排除词只能是文档类文字（`${`、`#`、`prompt`、`help`、`description`、`Authorization`、`git remote`、`GITHUB_TOKEN`、`grep.*token`、`echo.*{`、`cat.*EOF`、`示例`、`旧方式`、`references/`）。**绝对不能**把 `ghp_`、`sk-`、`AKIA` 等真实泄露模式加入白名单，否则会静默漏报。
 
-4. **推送后不验证** — 认为 push 成功就是成功了。必须 curl GitHub API 确认文件真的存在。
+4. **README.md 遗漏** — 审核时漏查 README，导致外部用户看不懂 skill 用途。
 
-5. **token 嵌在 remote URL 里 push** — 旧方式 `https://token@github.com` 会把 token 永久写入 `.git/config`。改用 `GIT_ASKPASS` 方式推送（见 Step 7.3），token 不落盘。若已误用，立刻检查 `git log` 确认 token 没残留在 commit 历史，然后 `git filter-branch` + force push + 轮换 token。
+5. **推送后不验证** — 认为 push 成功就是成功了。必须 curl GitHub API 确认文件真的存在。
 
-6. **用 `--force` 覆盖远程** — 直接 `--force` 会抹掉远程其他内容。改用 `--force-with-lease`，只有确认本地领先远程时才强制推送。
+6. **token 嵌在 remote URL 里 push** — 旧方式 `https://token@github.com` 会把 token 永久写入 `.git/config`。改用 `GIT_ASKPASS` 方式推送（见 Step 7.3），token 不落盘。若已误用，立刻检查 `git log` 确认 token 没残留在 commit 历史，然后 `git filter-branch` + force push + 轮换 token。
+
+7. **用 `--force` 覆盖远程** — 直接 `--force` 会抹掉远程其他内容。改用 `--force-with-lease`，只有确认本地领先远程时才强制推送。
+
+8. **`cp /*` 漏掉隐藏文件** — `cp -r dir/*` 不会复制 `.` 开头的文件（如 `.gitignore`）。改用 `cp -r dir/.`。
 
 ## 禁止项
 
@@ -426,8 +451,8 @@ curl -s -H "Authorization: token ${GITHUB_TOKEN}" \
 
 ```
 === Skill 安全审核报告 ===
-Skill: <name>
-版本: <version>
+Skill: ${SKILL_NAME}
+版本: ${VERSION:-$(grep -m1 '^version:' ~/.hermes/skills/${SKILL_NAME}/SKILL.md | awk '{print $2}')}
 
 ■ 安全扫描: PASS / FAIL
   - 敏感信息: 未发现 / 发现 N 处

@@ -1,36 +1,34 @@
 # Hermes Skills
 
-Custom skills for [Hermes Agent](https://github.com/nousresearch/hermes-agent).
+[Hermes Agent](https://github.com/nousresearch/hermes-agent) 自定义技能仓库。
 
-## Available Skills
+## 现有技能
 
 ### skill-publisher
-Safely publish a local Hermes skill to GitHub with security audit + format review.
+安全发布本地 skill 到 GitHub，包含安全扫描 + 格式审核。
 
-**Category:** productivity
+**分类：** productivity
 
-**Usage:** `hermes skills install buwenzheng/hermes-skills/skill-publisher`
+**安装：**
+```bash
+hermes skills install buwenzheng/hermes-skills/skill-publisher
+```
 
 ---
 
-## Install a Skill
+## 安装技能
 
 ```bash
 hermes skills install <owner>/<repo>/<skill-name>
 ```
 
-Example:
-```bash
-hermes skills install buwenzheng/hermes-skills/skill-publisher
-```
+## 提交新技能
 
-## Submit a New Skill
+1. 在 `~/.hermes/skills/<分类>/<技能名>/` 下创建 skill
+2. 确保包含有效的 `SKILL.md`（含 frontmatter）
+3. 告诉 Hermes 运行 `skill-publisher`，并指定技能名称
 
-1. Create your skill in `~/.hermes/skills/<category>/<skill-name>/`
-2. Make sure it has a valid `SKILL.md` with frontmatter
-3. Ask Hermes to run `skill-publisher` and specify your skill name
-
-## Repo Structure
+## 仓库结构
 
 ```
 hermes-skills/
@@ -40,8 +38,8 @@ hermes-skills/
     └── README.md
 ```
 
-Each skill lives at the root level (flat structure, not nested under `skills/`).
+所有 skill 均采用平铺结构（直接在根目录），不嵌套在 `skills/` 子目录下。
 
-## Security
+## 安全说明
 
-All skills are scanned for sensitive data before publishing. See [skill-publisher](https://github.com/buwenzheng/hermes-skills/tree/main/skill-publisher) for details.
+发布前所有技能都会经过敏感信息扫描，详见 [skill-publisher](https://github.com/buwenzheng/hermes-skills/tree/main/skill-publisher)。

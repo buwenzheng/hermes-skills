@@ -31,12 +31,9 @@ SENSITIVE_PATTERNS = [
     (r'AIza[0-9A-Za-z_-]{35}', 'Google API Key'),
     (r'AccountKey=[a-zA-Z0-9+/=]{88}', 'Azure Account Key'),
     (r'eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*', 'JSON Web Token'),
-    (r'token\s*[:=]\s*\'[a-zA-Z0-9_/-]{16,}\'', 'Token (单引号)'),
-    (r'token\s*[:=]\s*"[a-zA-Z0-9_/-]{16,}"', 'Token (双引号)'),
-    (r'api[_-]?key\s*[:=]\s*\'[a-zA-Z0-9_/-]{16,}\'', 'API Key (单引号)'),
-    (r'api[_-]?key\s*[:=]\s*"[a-zA-Z0-9_/-]{16,}"', 'API Key (双引号)'),
-    (r'password\s*[:=]\s*\'[^\']{8,}\'', 'Password (单引号)'),
-    (r'password\s*[:=]\s*"[^"]{8,}"', 'Password (双引号)'),
+    (r'token\s*[:=]\s*[\'"][a-zA-Z0-9_/-]{16,}[\'"]', 'Token'),
+    (r'api[_-]?key\s*[:=]\s*[\'"][a-zA-Z0-9_/-]{16,}[\'"]', 'API Key'),
+    (r'password\s*[:=]\s*[\'"][^\']{8,}[\'"]', 'Password'),
 ]
 
 FORBIDDEN_PATTERNS = [
@@ -63,8 +60,31 @@ GITIGNORE_CONTENT = """
 """.lstrip('\n')
 
 
-def run(cmd: list, *, cwd: Path | None = None) -> subprocess.CompletedProcess:
-    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+def get_flat_name(skill_name: str) -> str:
+    """去掉分类前缀，返回平铺的 skill 名称。
+    例：mcp/music-tag-web-mcp → music-tag-web-mcp
+    """
+    return skill_name.split('/')[-1]
+
+
+def get_proxy_config() -> dict:
+    """从环境变量或 git config 读取代理配置。"""
+    proxy = os.environ.get('http_proxy') or os.environ.get('HTTP_PROXY')
+    if proxy:
+        return {'http.proxy': proxy, 'https.proxy': proxy}
+    # 检查 git global config
+    try:
+        r = subprocess.run(['git', 'config', '--global', 'http.proxy'],
+                           capture_output=True, text=True)
+        if r.stdout.strip():
+            return {'http.proxy': r.stdout.strip(), 'https.proxy': r.stdout.strip()}
+    except Exception:
+        pass
+    return {}
+
+
+def run(cmd: list, *, cwd: Path | None = None, capture_output: bool = True) -> subprocess.CompletedProcess:
+    result = subprocess.run(cmd, cwd=cwd, capture_output=capture_output, text=True)
     if result.returncode != 0:
         print(f"❌ 命令失败: {' '.join(cmd)}")
         print(f"   exit code: {result.returncode}")
@@ -184,12 +204,14 @@ def _git_config(work_dir: Path, key: str, val: str):
 
 
 def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
-    work_dir = Path(f'/tmp/{skill_name}-push')
+    # 平铺名称：去掉分类前缀
+    flat_name = get_flat_name(skill_name)
+    work_dir = Path(f'/tmp/{flat_name}-push')
     quarantine = Path(f'/tmp/skill-publisher-quarantine-{int(time.time())}')
 
     try:
         print(f"=== Skill 发布流程 ===")
-        print(f"Skill : {skill_name}")
+        print(f"Skill : {skill_name} → {flat_name}")
         print(f"目标 : {user}/{repo}")
         print()
 
@@ -209,9 +231,10 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
 
         run(['git', 'clone', '--depth', '1',
              f'https://github.com/{user}/{repo}.git', str(work_dir)],
-            capture=False)
+            capture_output=False)
 
-        target = work_dir / skill_name
+        # 平铺：直接在仓库根目录创建 skill 目录
+        target = work_dir / flat_name
         target.mkdir(exist_ok=True)
         for item in skill_dir.iterdir():
             if item.name == '__pycache__':
@@ -248,10 +271,13 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
         default_branch = get_default_branch(user, repo, token)
         _git_config(work_dir, 'user.email', 'hermes-agent@nomail')
         _git_config(work_dir, 'user.name', 'Hermes Agent')
-        for key in ['http.proxy', 'https.proxy']:
-            _git_config(work_dir, key, 'http://127.0.0.1:7890')
 
-        run(['git', 'add', '.'], cwd=work_dir, capture=False)
+        # 代理配置：从环境变量或 git config 读取，不再硬编码
+        proxy_config = get_proxy_config()
+        for key, val in proxy_config.items():
+            _git_config(work_dir, key, val)
+
+        run(['git', 'add', '.'], cwd=work_dir)
 
         staged = run(['git', 'diff', '--cached', '--name-only'], cwd=work_dir)
         file_count = len([l for l in staged.stdout.splitlines() if l.strip()])
@@ -266,8 +292,14 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
             sys.exit(1)
         print("  ✓ staged grep 无敏感信息")
 
-        commit_msg = f"feat: add {skill_name} v{new_ver}"
-        run(['git', 'commit', '-m', commit_msg], cwd=work_dir, capture=False)
+        # 判断是新增还是更新
+        existing_skill = curl_get(
+            f'https://api.github.com/repos/{user}/{repo}/contents/{flat_name}/SKILL.md',
+            token
+        )
+        action = "update" if existing_skill.get('sha') else "add"
+        commit_msg = f"feat: {action} {flat_name} v{new_ver}"
+        run(['git', 'commit', '-m', commit_msg], cwd=work_dir)
         print(f"  ✓ commit: {commit_msg}")
 
         askpass = Path('/tmp/git-askpass.sh')
@@ -276,8 +308,9 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
         env = os.environ.copy()
         env['GIT_ASKPASS'] = str(askpass)
 
+        # 直接 push，不用 --force-with-lease
         push = subprocess.run(
-            ['git', 'push', 'origin', default_branch, '--force-with-lease'],
+            ['git', 'push', 'origin', default_branch],
             cwd=work_dir, env=env, capture_output=True, text=True
         )
         if push.returncode != 0:
@@ -292,7 +325,7 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
                            capture_output=True, text=True)
         commit_hash = rev.stdout.strip()
         data = curl_get(
-            f'https://api.github.com/repos/{user}/{repo}/contents/{skill_name}/SKILL.md',
+            f'https://api.github.com/repos/{user}/{repo}/contents/{flat_name}/SKILL.md',
             token
         )
         sha = data.get('sha', '')
@@ -306,14 +339,16 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
         print("■ Step 5: 更新 PUBLISHED.md")
         published_path = work_dir / 'PUBLISHED.md'
         today = time.strftime('%Y-%m-%d')
-        new_entry = f'| {skill_name} | {new_ver} | {today} | `{commit_hash}` |'
+        # PUBLISHED.md 用 flat_name 避免表格错位
+        new_entry = f'| {flat_name} | {new_ver} | {today} | `{commit_hash}` |'
 
         if published_path.exists():
             lines = published_path.read_text().splitlines()
             found = False
             new_lines = []
             for line in lines:
-                if line.startswith(f'| {skill_name} |'):
+                # 匹配时也用 flat_name
+                if line.startswith(f'| {flat_name} |'):
                     new_lines.append(new_entry)
                     found = True
                 else:
@@ -329,11 +364,11 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
                 f'{new_entry}\n'
             )
 
-        run(['git', 'add', 'PUBLISHED.md'], cwd=work_dir, capture=False)
-        run(['git', 'commit', '-m', f'chore: update PUBLISHED.md for {skill_name}'],
-            cwd=work_dir, capture=False)
+        run(['git', 'add', 'PUBLISHED.md'], cwd=work_dir)
+        run(['git', 'commit', '-m', f'chore: update PUBLISHED.md for {flat_name}'],
+            cwd=work_dir, capture_output=False)
         push2 = subprocess.run(
-            ['git', 'push', 'origin', default_branch, '--force-with-lease'],
+            ['git', 'push', 'origin', default_branch],
             cwd=work_dir, env=env, capture_output=True, text=True
         )
         if push2.returncode != 0:
@@ -347,9 +382,9 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
 
         print()
         print("=== 发布完成 ===")
-        print(f"Skill : {skill_name} v{new_ver}")
+        print(f"Skill : {flat_name} v{new_ver}")
         print(f"Commit: {commit_hash}")
-        print(f"地址 : https://github.com/{user}/{repo}/tree/{default_branch}/{skill_name}")
+        print(f"地址 : https://github.com/{user}/{repo}/tree/{default_branch}/{flat_name}")
         print(f"验证 : ✓ PASS")
 
     finally:
@@ -361,7 +396,7 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
 
 def main():
     parser = argparse.ArgumentParser(description='Hermes Skill 发布工具')
-    parser.add_argument('skill_name', help='Skill 名称')
+    parser.add_argument('skill_name', help='Skill 名称（支持分类前缀如 mcp/xxx）')
     parser.add_argument('--user', default='buwenzheng', help='GitHub 用户名')
     parser.add_argument('--repo', default='hermes-skills', help='GitHub 仓库名')
     parser.add_argument('--skill-dir', help='本地 skill 目录（默认 ~/.hermes/skills/<name>）')

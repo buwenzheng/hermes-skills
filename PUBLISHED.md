@@ -6,3 +6,5 @@
 | skill-audit | 1.0.0 | 2026-05-07 | `c9d7dd3` |
 | skill-publisher | 1.1.0 | 2026-05-07 | `82aaf89` |
 | chsrc | 1.0.1 | 2026-05-07 | `4e0a2cb` |
+
+| mcp/music-tag-web-mcp | 1.0.2 | 2026-05-08 | `7e12570` |

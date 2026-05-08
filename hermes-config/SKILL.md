@@ -1,7 +1,7 @@
 ---
 name: hermes-config
 description: "Use when modifying Hermes Agent configuration: adding providers, changing models, editing .env keys, or troubleshooting config-related issues. Captures pitfalls discovered during real config changes."
-version: 1.0.1
+version: 1.0.0
 author: Hermes Agent
 license: MIT
 metadata:

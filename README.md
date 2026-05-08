@@ -4,42 +4,40 @@
 
 ## 现有技能
 
-### skill-publisher
-安全发布本地 skill 到 GitHub，包含安全扫描 + 格式审核。
-
-**分类：** productivity
-
-**安装：**
-```bash
-hermes skills install buwenzheng/hermes-skills/skill-publisher
-```
-
----
+| Skill | 版本 | 说明 | 分类 |
+|-------|------|------|------|
+| [siyuan](./siyuan) | 1.0.0 | 思源笔记基础知识库 | note-taking |
+| [skill-audit](./skill-audit) | 1.0.0 | Skill 安全/格式审查 | productivity |
+| [skill-publisher](./skill-publisher) | 2.1.1 | Skill 发布到 GitHub | productivity |
+| [chsrc](./chsrc) | 1.0.1 | 换源工具（自动测速切换镜像源） | chsrc |
+| [music-tag-web-mcp](./music-tag-web-mcp) | 1.0.2 | Music Tag Web MCP 音乐元数据管理 | mcp |
+| [hermes-config](./hermes-config) | 1.0.1 | Hermes 配置管理经验库 | autonomous-ai-agents |
 
 ## 安装技能
 
 ```bash
-hermes skills install <owner>/<repo>/<skill-name>
+hermes skills install buwenzheng/hermes-skills/<skill-name>
 ```
 
 ## 提交新技能
 
 1. 在 `~/.hermes/skills/<分类>/<技能名>/` 下创建 skill
-2. 确保包含有效的 `SKILL.md`（含 frontmatter）
-3. 告诉 Hermes 运行 `skill-publisher`，并指定技能名称
+2. 确保包含有效的 `SKILL.md`（含 frontmatter）和 `README.md`
+3. 运行 `skill-audit` 审核通过后，用 `skill-publisher` 发布
 
 ## 仓库结构
 
 ```
 hermes-skills/
 ├── README.md
-└── <skill-name>/
-    ├── SKILL.md
-    └── README.md
+├── PUBLISHED.md          # 发布记录
+├── .gitignore
+├── <skill-name>/         # 平铺结构，不嵌套
+│   ├── SKILL.md
+│   └── README.md
+└── ...
 ```
-
-所有 skill 均采用平铺结构（直接在根目录），不嵌套在 `skills/` 子目录下。
 
 ## 安全说明
 
-发布前所有技能都会经过敏感信息扫描，详见 [skill-publisher](https://github.com/buwenzheng/hermes-skills/tree/main/skill-publisher)。
+发布前所有技能都会经过 `skill-audit` 敏感信息扫描，详见 [skill-publisher](./skill-publisher)。

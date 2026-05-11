@@ -1,7 +1,7 @@
 ---
-name: siyuan
+name: siyuan-custom
 description: 思源笔记（SiYuan Note）基础知识库，提供核心概念（内容块、块引用、嵌入块）、通用 API 调用方法、模板语法、闪卡系统等基础知识。当询问思源笔记的基本概念、API 原理、块操作语法、模板开发或通用操作时使用此技能（基础层）。
-version: 1.0.2
+version: 1.0.3
 tags: [siyuan, 笔记, knowledge-management]
 required_environment_variables:
   - name: SIYUAN_API_URL

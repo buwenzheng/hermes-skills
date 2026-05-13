@@ -1,0 +1,5 @@
+# 本地配置和缓存（含 token）
+*_config.json
+*_cache.json
+*.pyc
+__pycache__/

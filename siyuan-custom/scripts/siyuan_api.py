@@ -5,11 +5,11 @@
     python3 siyuan_api.py <command> [args...]
 
 配置:
-    读取 ~/.hermes/skills/siyuan/scripts/siyuan_config.json
+    读取 ~/.config/siyuan/config
     或环境变量 SIYUAN_API_URL, SIYUAN_API_TOKEN
 
 缓存:
-    默认启用本地缓存（~/.hermes/skills/siyuan/scripts/siyuan_cache.json）
+    默认启用本地缓存（~/.config/siyuan/cache.json）
     缓存两周，写操作后自动失效
     可用 --no-cache 强制走 API
 """
@@ -147,7 +147,7 @@ def cmd_list_notebooks(config, use_cache=True):
 
 def cmd_get_notebook(config, notebook_id):
     """获取笔记本配置"""
-    result = api_request(config, "/api/notebook/getNotebookConf", {"notebookId": notebook_id})
+    result = api_request(config, "/api/notebook/getNotebookConf", {"notebook": notebook_id})
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
@@ -163,7 +163,7 @@ def cmd_create_notebook(config, name):
 
 def cmd_open_notebook(config, notebook_id):
     """打开笔记本"""
-    result = api_request(config, "/api/notebook/openNotebook", {"notebookId": notebook_id})
+    result = api_request(config, "/api/notebook/openNotebook", {"notebook": notebook_id})
     if result.get("code") == 0:
         print(f"笔记本已打开: {notebook_id}")
         cache_invalidate("notebooks")
@@ -173,7 +173,7 @@ def cmd_open_notebook(config, notebook_id):
 
 def cmd_close_notebook(config, notebook_id):
     """关闭笔记本"""
-    result = api_request(config, "/api/notebook/closeNotebook", {"notebookId": notebook_id})
+    result = api_request(config, "/api/notebook/closeNotebook", {"notebook": notebook_id})
     if result.get("code") == 0:
         print(f"笔记本已关闭: {notebook_id}")
         cache_invalidate("notebooks")
@@ -183,7 +183,7 @@ def cmd_close_notebook(config, notebook_id):
 
 def cmd_rename_notebook(config, notebook_id, new_name):
     """重命名笔记本"""
-    result = api_request(config, "/api/notebook/renameNotebook", {"notebookId": notebook_id, "name": new_name})
+    result = api_request(config, "/api/notebook/renameNotebook", {"notebook": notebook_id, "name": new_name})
     if result.get("code") == 0:
         print(f"笔记本已重命名为: {new_name}")
         cache_invalidate("notebooks")
@@ -193,7 +193,7 @@ def cmd_rename_notebook(config, notebook_id, new_name):
 
 def cmd_remove_notebook(config, notebook_id):
     """删除笔记本"""
-    result = api_request(config, "/api/notebook/removeNotebook", {"notebookId": notebook_id})
+    result = api_request(config, "/api/notebook/removeNotebook", {"notebook": notebook_id})
     if result.get("code") == 0:
         print(f"笔记本已删除: {notebook_id}")
         cache_invalidate("notebooks")
@@ -209,7 +209,7 @@ def cmd_set_notebook_conf(config, notebook_id, conf_json):
     except json.JSONDecodeError:
         print("错误: conf_json 应为合法 JSON 字符串", file=sys.stderr)
         sys.exit(1)
-    conf["notebookId"] = notebook_id
+    conf["notebook"] = notebook_id
     result = api_request(config, "/api/notebook/setNotebookConf", conf)
     if result.get("code") == 0:
         print(f"笔记本配置已保存: {notebook_id}")
@@ -374,7 +374,13 @@ def cmd_get_hpath_by_id(config, block_id):
     """根据 ID 获取人类可读路径"""
     result = api_request(config, "/api/filetree/getHPathByID", {"id": block_id})
     if result.get("code") == 0:
-        print(result.get("data", {}).get("hPath", ""))
+        data = result.get("data")
+        if isinstance(data, str):
+            print(data)
+        elif isinstance(data, dict):
+            print(data.get("hPath", ""))
+        else:
+            print(data or "")
     else:
         print(f"获取失败: {result.get('msg')}", file=sys.stderr)
 
@@ -388,13 +394,19 @@ def cmd_get_hpath_by_path(config, notebook_id, path):
         print(f"获取失败: {result.get('msg')}", file=sys.stderr)
 
 
-def cmd_get_ids_by_hpath(config, hpath):
+def cmd_get_ids_by_hpath(config, notebook_id, hpath):
     """根据人类可读路径获取 ID 列表"""
-    result = api_request(config, "/api/filetree/getIDsByHPath", {"path": hpath})
+    result = api_request(config, "/api/filetree/getIDsByHPath", {"notebook": notebook_id, "path": hpath})
     if result.get("code") == 0:
-        ids = result.get("data", {}).get("id", [])
+        data = result.get("data")
+        if isinstance(data, list):
+            ids = data
+        elif isinstance(data, dict):
+            ids = data.get("id") or data.get("ids") or []
+        else:
+            ids = []
         if ids:
-            print("\n".join(ids))
+            print("\n".join(str(i) for i in ids))
         else:
             print("(无结果)")
     else:
@@ -419,7 +431,13 @@ def cmd_insert_block(config, parent_id, data_type, markdown):
     data = {"parentID": parent_id, "dataType": data_type, "data": markdown}
     result = api_request(config, "/api/block/insertBlock", data)
     if result.get("code") == 0:
-        block_id = result.get("data", {}).get("block", {}).get("id")
+        blocks = result.get("data", [])
+        if isinstance(blocks, list) and blocks:
+            block_id = blocks[0].get("id", "")
+        elif isinstance(blocks, dict):
+            block_id = blocks.get("block", {}).get("id", "")
+        else:
+            block_id = ""
         print(f"块插入成功: {block_id}")
         return block_id
     else:
@@ -432,7 +450,13 @@ def cmd_append_block(config, parent_id, block_type, markdown):
     data = {"parentID": parent_id, "dataType": block_type, "data": markdown}
     result = api_request(config, "/api/block/appendBlock", data)
     if result.get("code") == 0:
-        block_id = result.get("data", {}).get("block", {}).get("id")
+        blocks = result.get("data", [])
+        if isinstance(blocks, list) and blocks:
+            block_id = blocks[0].get("id", "")
+        elif isinstance(blocks, dict):
+            block_id = blocks.get("block", {}).get("id", "")
+        else:
+            block_id = ""
         print(f"块追加成功: {block_id}")
         return block_id
     else:
@@ -445,7 +469,13 @@ def cmd_prepend_block(config, parent_id, block_type, markdown):
     data = {"parentID": parent_id, "dataType": block_type, "data": markdown}
     result = api_request(config, "/api/block/prependBlock", data)
     if result.get("code") == 0:
-        block_id = result.get("data", {}).get("block", {}).get("id")
+        blocks = result.get("data", [])
+        if isinstance(blocks, list) and blocks:
+            block_id = blocks[0].get("id", "")
+        elif isinstance(blocks, dict):
+            block_id = blocks.get("block", {}).get("id", "")
+        else:
+            block_id = ""
         print(f"块前置成功: {block_id}")
         return block_id
     else:
@@ -486,7 +516,13 @@ def cmd_get_child_blocks(config, block_id):
     """获取子块列表"""
     result = api_request(config, "/api/block/getChildBlocks", {"id": block_id})
     if result.get("code") == 0:
-        children = result.get("data", {}).get("blocks", [])
+        data = result.get("data", [])
+        if isinstance(data, list):
+            children = data
+        elif isinstance(data, dict):
+            children = data.get("blocks", [])
+        else:
+            children = []
         if not children:
             print("(无子块)")
             return
@@ -603,7 +639,13 @@ def cmd_template_render(config, id_, template):
     data = {"id": id_, "template": template}
     result = api_request(config, "/api/template/render", data)
     if result.get("code") == 0:
-        print(result.get("data", {}).get("html", ""))
+        data = result.get("data")
+        if isinstance(data, dict):
+            print(data.get("html", ""))
+        elif data is None:
+            print("(模板无输出)")
+        else:
+            print(data)
     else:
         print(f"渲染失败: {result.get('msg')}", file=sys.stderr)
 
@@ -613,7 +655,13 @@ def cmd_template_render_sprig(config, id_, text):
     data = {"id": id_, "text": text}
     result = api_request(config, "/api/template/renderSprig", data)
     if result.get("code") == 0:
-        print(result.get("data", {}).get("html", ""))
+        data = result.get("data")
+        if isinstance(data, dict):
+            print(data.get("html", ""))
+        elif data is None:
+            print("(模板无输出)")
+        else:
+            print(data)
     else:
         print(f"渲染失败: {result.get('msg')}", file=sys.stderr)
 
@@ -624,30 +672,68 @@ def cmd_template_render_sprig(config, id_, text):
 
 def cmd_get_file(config, path):
     """读取工作区文件"""
-    result = api_request(config, "/api/file/getFile", {"path": path})
-    if result.get("code") == 0:
-        print(result.get("data", {}).get("content", ""), end="")
-    else:
-        print(f"读取失败: {result.get('msg')}", file=sys.stderr)
+    url = f"{config['api_url']}/api/file/getFile"
+    headers = {}
+    if config.get("api_token"):
+        headers["Authorization"] = f"Token {config['api_token']}"
+    try:
+        resp = requests.post(url, headers={**headers, "Content-Type": "application/json"},
+                             json={"path": path}, timeout=30)
+        resp.raise_for_status()
+        # getFile 成功时返回纯文本内容（非 JSON），失败时返回 JSON
+        text = resp.text
+        if text.startswith("{"):
+            try:
+                result = json.loads(text)
+                if result.get("code") != 0:
+                    print(f"读取失败: {result.get('msg')}", file=sys.stderr)
+                    return
+            except json.JSONDecodeError:
+                pass
+        print(text, end="")
+    except requests.exceptions.RequestException as e:
+        print(f"请求失败: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 def cmd_put_file(config, path, content):
     """写入工作区文件"""
-    data = {"path": path, "content": content}
-    result = api_request(config, "/api/file/putFile", data)
-    if result.get("code") == 0:
-        print(f"文件写入成功: {path}")
-    else:
-        print(f"写入失败: {result.get('msg')}", file=sys.stderr)
+    url = f"{config['api_url']}/api/file/putFile"
+    headers = {}
+    if config.get("api_token"):
+        headers["Authorization"] = f"Token {config['api_token']}"
+    # putFile 需要 multipart/form-data，不能用 JSON
+    try:
+        resp = requests.post(url, headers=headers,
+                             files={"file": (path, content.encode("utf-8"), "application/octet-stream")},
+                             data={"path": path},
+                             timeout=30)
+        resp.raise_for_status()
+        result = resp.json()
+        if result.get("code") == 0:
+            print(f"文件写入成功: {path}")
+        else:
+            print(f"写入失败: {result.get('msg')}", file=sys.stderr)
+    except requests.exceptions.RequestException as e:
+        print(f"请求失败: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 def cmd_read_dir(config, path):
     """列出工作区目录"""
     result = api_request(config, "/api/file/readDir", {"path": path})
     if result.get("code") == 0:
-        files = result.get("data", {}).get("files", [])
+        data = result.get("data")
+        # API 返回 data: [list] 或 data: {"files": [list]}
+        if isinstance(data, list):
+            files = data
+        elif isinstance(data, dict):
+            files = data.get("files", [])
+        else:
+            files = []
         for f in files:
-            print(f"{f.get('name'):<40} {'dir' if f.get('isDir') else 'file':<6} {f.get('size', 0)}")
+            if isinstance(f, dict):
+                print(f"{f.get('name', ''):<40} {'dir' if f.get('isDir') else 'file':<6} {f.get('size', 0)}")
     else:
         print(f"读取失败: {result.get('msg')}", file=sys.stderr)
 
@@ -681,14 +767,23 @@ def cmd_upload_asset(config, file_path):
         print(f"文件不存在: {file_path}", file=sys.stderr)
         sys.exit(1)
     url = f"{config['api_url']}/api/asset/upload"
-    headers = get_headers(config)
+    # 上传文件不能带 Content-Type: application/json，否则和 multipart 冲突
+    headers = {}
+    if config.get("api_token"):
+        headers["Authorization"] = f"Token {config['api_token']}"
     with open(file_path, "rb") as f:
         files = {"file": f}
         resp = requests.post(url, headers=headers, files=files, timeout=60)
     resp.raise_for_status()
     result = resp.json()
     if result.get("code") == 0:
-        print(result.get("data", {}).get("url", ""))
+        data = result.get("data")
+        if isinstance(data, dict):
+            print(data.get("url", "") or data.get("path", "") or str(data))
+        elif isinstance(data, str):
+            print(data)
+        else:
+            print(f"上传成功: {result}")
     else:
         print(f"上传失败: {result.get('msg')}", file=sys.stderr)
 
@@ -707,8 +802,12 @@ def cmd_export_md(config, doc_id):
 
 
 def cmd_export_resources(config, notebook_id, path):
-    """导出一个目录下的所有资源文件（ZIP）"""
-    data = {"notebookId": notebook_id, "path": path}
+    """导出一个目录下的所有资源文件（ZIP）
+    path: hpath（如 /CherryStudio），脚本自动转为工作区路径 /data/<nb_id>/<name>
+    """
+    # API 要求工作区完整路径，不是 hpath
+    ws_path = f"/data/{notebook_id}{path}"
+    data = {"notebook": notebook_id, "paths": [ws_path]}
     result = api_request(config, "/api/export/exportResources", data)
     if result.get("code") == 0:
         print(json.dumps(result.get("data", {}), indent=2, ensure_ascii=False))
@@ -809,7 +908,12 @@ def cmd_current_time(config):
     """获取系统当前时间"""
     result = api_request(config, "/api/system/currentTime")
     if result.get("code") == 0:
-        print(result.get("data", {}).get("time", ""))
+        data = result.get("data")
+        # API 返回毫秒时间戳（整数），也兼容 dict 格式
+        if isinstance(data, dict):
+            print(data.get("time", ""))
+        else:
+            print(data)
     else:
         print(f"获取失败: {result.get('msg')}", file=sys.stderr)
 
@@ -835,7 +939,7 @@ def usage():
     python3 siyuan_api.py <command> [args...] [--no-cache]
 
 缓存说明:
-    默认走本地缓存（~/.hermes/skills/siyuan/scripts/siyuan_cache.json）
+    默认走本地缓存（~/.config/siyuan/cache.json）
     --no-cache 强制直连 API
     写操作（增/删/改）后自动使缓存失效
 
@@ -847,7 +951,7 @@ def usage():
     init <API URL> <Token>                    初始化配置并预热缓存
 
 【笔记本】
-    list_notebooks                              列出所有笔记本（缓存 5 分钟）
+    list_notebooks                              列出所有笔记本（缓存 14 天）
     get_notebook_conf <笔记本ID>                 获取笔记本配置
     create_notebook <名称>                       创建笔记本
     open_notebook <笔记本ID>                     打开笔记本
@@ -857,7 +961,7 @@ def usage():
     set_notebook_conf <笔记本ID> <JSON配置>       保存笔记本配置
 
 【文档树】
-    doc_tree <笔记本ID>                          查看文档树（缓存 1 小时）
+    doc_tree <笔记本ID>                          查看文档树（缓存 14 天）
     search_doc <关键词> [笔记本ID]               搜索文档
 
 【文档（文件树）】
@@ -870,7 +974,7 @@ def usage():
     move_docs_by_id <文档ID> <目标块ID> <索引>   移动文档（按ID）
     get_hpath_by_id <块ID>                        获取人类可读路径（按ID）
     get_hpath_by_path <笔记本ID> /路径            获取人类可读路径（按路径）
-    get_ids_by_hpath "/a/b/c"                    获取人类可读路径对应的ID列表
+    get_ids_by_hpath <笔记本ID> "/a/b/c"          获取人类可读路径对应的ID列表
     get_path_by_id <块ID>                        获取物理路径（按ID）
 
 【块操作】
@@ -910,7 +1014,7 @@ def usage():
 
 【导出】
     export_md <文档ID>                           导出文档为 Markdown
-    export_resources <笔记本ID> /路径            导出一个目录下的资源（ZIP）
+    export_resources <笔记本ID> /路径            导出一个目录下的资源（ZIP，paths参数）
 
 【通知】
     push_msg "消息内容" [timeout]                 推送消息（默认 7s）
@@ -1052,7 +1156,8 @@ if __name__ == "__main__":
         cmd_get_hpath_by_path(config, args[0], args[1])
 
     elif cmd == "get_ids_by_hpath":
-        cmd_get_ids_by_hpath(config, args[0]) if args else (print("缺少路径", file=sys.stderr), sys.exit(1))
+        if len(args) < 2: print("用法: get_ids_by_hpath <笔记本ID> /路径", file=sys.stderr), sys.exit(1)
+        cmd_get_ids_by_hpath(config, args[0], args[1])
 
     elif cmd == "get_path_by_id":
         cmd_get_path_by_id(config, args[0]) if args else (print("缺少块ID", file=sys.stderr), sys.exit(1))

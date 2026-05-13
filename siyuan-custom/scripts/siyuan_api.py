@@ -223,8 +223,9 @@ def cmd_set_notebook_conf(config, notebook_id, conf_json):
 
 def _build_doc_tree(config, notebook_id):
     """从 API 重新构建文档树"""
+    # 思源 SQL API 默认限制 64 条结果，必须加足够大的 LIMIT
     result = api_request(config, "/api/query/sql", {
-        "stmt": f'SELECT id, path, hpath, name, type FROM blocks WHERE box="{notebook_id}" AND type="d" ORDER BY hpath ASC'
+        "stmt": f'SELECT id, path, hpath, name, type FROM blocks WHERE box="{notebook_id}" AND type="d" ORDER BY hpath ASC LIMIT 10000'
     })
     docs = result.get("data", [])
     return docs

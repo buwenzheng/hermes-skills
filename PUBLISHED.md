@@ -9,7 +9,7 @@
 
 | mcp/music-tag-web-mcp | 1.0.2 | 2026-05-08 | `7e12570` |
 
-| hermes-config | 1.0.1 | 2026-05-08 | `7338168` |
+| hermes-config | 1.1.0 | 2026-05-14 | `ec46a2f` |
 
 | siyuan-custom | 1.2.3 | 2026-05-14 | `7de67b9` |
 

@@ -64,10 +64,15 @@ def cache_set(key, data):
 
 
 def cache_invalidate(key=None):
-    """key 为 None 清除所有，否则只清除指定 key"""
+    """key 为 None 清除所有；key 末尾带 * 时按前缀匹配清除；否则只清除指定 key"""
     c = load_cache()
     if key is None:
         c.clear()
+    elif key.endswith('*'):
+        prefix = key[:-1]
+        to_del = [k for k in c if k.startswith(prefix)]
+        for k in to_del:
+            del c[k]
     elif key in c:
         del c[key]
     save_cache(c)

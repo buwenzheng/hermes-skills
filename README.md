@@ -6,11 +6,12 @@
 
 | Skill | 版本 | 说明 | 分类 |
 |-------|------|------|------|
-| [chsrc](./chsrc) | 1.0.1 | chsrc 换源工具，通过自动测速为各种编程语言/OS/软件切换到国内最快镜像源 | productivity |
-| [hermes-config](./hermes-config) | 1.0.0 | "Use when modifying Hermes Agent configuration: adding provi | uncategorized |
-| [siyuan-custom](./siyuan-custom) | 1.2.2 | >- | uncategorized |
-| [skill-audit](./skill-audit) | 1.0.0 | Use when the user asks to audit, scan, or review a local Her | uncategorized |
-| [skill-publisher](./skill-publisher) | 2.1.1 | Use when the user asks to publish a local Hermes skill to Gi | uncategorized |
+| [siyuan-custom](./siyuan-custom) | 1.2.5 | 思源笔记操作：查询、搜索、创建、编辑、删除内容块 | note-taking |
+| [skill-publisher](./skill-publisher) | 2.3.0 | Skill 发布到 GitHub（audit → publish → pin） | productivity |
+| [skill-audit](./skill-audit) | 1.0.0 | Skill 安全/格式审查 | productivity |
+| [chsrc](./chsrc) | 1.0.1 | chsrc 换源工具，自动测速切换镜像源 | productivity |
+| [music-tag-web-mcp](./music-tag-web-mcp) | 1.0.2 | Music Tag Web MCP 音乐元数据管理 | mcp |
+| [hermes-config](./hermes-config) | 1.0.1 | Hermes 配置管理经验库 | autonomous-ai-agents |
 
 ## 安装技能
 

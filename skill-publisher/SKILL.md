@@ -7,7 +7,7 @@ description: >-
   skill-audit, and only proceeds if the result is APPROVED. Direct push to main,
   bumps version, isolates sensitive files, updates README. Requires skill-audit
   APPROVED. Triggered manually — never automated.
-version: 2.3.1
+version: 2.3.2
 author: Hermes Agent
 license: MIT
 metadata:

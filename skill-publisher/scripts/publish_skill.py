@@ -20,6 +20,24 @@ import shutil
 import argparse
 from pathlib import Path
 
+# 内建 .env 加载：从 ~/.hermes/.env 读取环境变量
+def _load_dotenv():
+    env_path = Path.home() / '.hermes' / '.env'
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        if '=' in line:
+            key, _, value = line.partition('=')
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+_load_dotenv()
+
 SENSITIVE_PATTERNS = [
     (r'ghp_[a-zA-Z0-9]{36}', 'GitHub PAT'),
     (r'github_pat_[a-zA-Z0-9]{22}_[a-zA-Z0-9]{59}', 'GitHub Fine-grained PAT'),
@@ -198,12 +216,90 @@ def _dedupe_gitignore(gitignore_path: Path):
     gitignore_path.write_text('\n'.join(deduped) + '\n')
 
 
+def update_readme(work_dir: Path, token: str):
+    """扫描仓库内所有 skill 目录，重新生成 README.md 中的"现有技能"表格。"""
+    def _extract_desc(fm: str) -> str:
+        """从 frontmatter 提取 description，支持 >- / | 等 YAML 多行语法。"""
+        lines = fm.splitlines()
+        for i, line in enumerate(lines):
+            if re.match(r'^description:\s*', line):
+                val = re.sub(r'^description:\s*', '', line).strip()
+                if val in ('>-', '>', '|', '|-'):
+                    # 多行：收集后续缩进行
+                    collected = []
+                    for j in range(i + 1, len(lines)):
+                        next_line = lines[j]
+                        if next_line.strip() == '' or next_line.startswith(' '):
+                            collected.append(next_line.strip())
+                        else:
+                            break
+                    return ' '.join(collected).strip()[:80]
+                return val[:80]
+        return ''
+
+    readme_path = work_dir / 'README.md'
+    if not readme_path.exists():
+        print("  ⚠ README.md 不存在，跳过更新")
+        return
+
+    # 扫描所有 skill 目录（排除非 skill 目录）
+    skills = []
+    for item in sorted(work_dir.iterdir()):
+        if not item.is_dir():
+            continue
+        skill_md = item / 'SKILL.md'
+        if not skill_md.exists():
+            continue
+        content = skill_md.read_text(encoding='utf-8', errors='ignore')
+        # 提取 frontmatter
+        fm_match = re.search(r'^---\s*\n(.*?)\n---', content, re.DOTALL)
+        if not fm_match:
+            continue
+        fm = fm_match.group(1)
+        name_m = re.search(r'^name:\s*(\S+)', fm, re.MULTILINE)
+        ver_m = re.search(r'^version:\s*(\S+)', fm, re.MULTILINE)
+        desc_m = re.search(r'^description:\s*(.+)', fm, re.MULTILINE)
+        cat_m = re.search(r'^category:\s*(\S+)', fm, re.MULTILINE)
+        skills.append({
+            'name': name_m.group(1) if name_m else item.name,
+            'version': ver_m.group(1) if ver_m else '0.0.0',
+            'desc': _extract_desc(fm) or (desc_m.group(1).strip()[:60] if desc_m else ''),
+            'category': cat_m.group(1) if cat_m else 'uncategorized',
+        })
+
+    if not skills:
+        print("  ⚠ 未发现任何 skill，跳过 README 更新")
+        return
+
+    # 生成表格
+    table_lines = [
+        '| Skill | 版本 | 说明 | 分类 |',
+        '|-------|------|------|------|',
+    ]
+    for s in skills:
+        table_lines.append(
+            f'| [{s["name"]}](./{s["name"]}) | {s["version"]} | {s["desc"]} | {s["category"]} |'
+        )
+    table = '\n'.join(table_lines)
+
+    # 替换 README 中 "## 现有技能" 到下一个 "##" 之间的内容
+    readme_content = readme_path.read_text(encoding='utf-8')
+    pattern = r'(## 现有技能\n\n).*?(\n## )'
+    replacement = f'\\1{table}\n\\2'
+    new_readme = re.sub(pattern, replacement, readme_content, count=1, flags=re.DOTALL)
+    if new_readme == readme_content:
+        print("  ⚠ 未找到 '## 现有技能' 段落，跳过 README 更新")
+        return
+    readme_path.write_text(new_readme, encoding='utf-8')
+    print(f"  ✓ README.md 已更新（{len(skills)} 个 skill）")
+
+
 def _git_config(work_dir: Path, key: str, val: str):
     subprocess.run(['git', 'config', key, val], cwd=work_dir,
                    capture_output=True)
 
 
-def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
+def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str, explicit_version: str = None):
     # 平铺名称：去掉分类前缀
     flat_name = get_flat_name(skill_name)
     work_dir = Path(f'/tmp/{flat_name}-push')
@@ -260,9 +356,19 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str):
         cur_ver = get_skill_version(skill_dir)
         work_skill_md = target / 'SKILL.md'
         content = work_skill_md.read_text(encoding='utf-8', errors='ignore')
-        updated_content, new_ver = bump_version(content)
+        if explicit_version:
+            new_ver = explicit_version
+            updated_content = re.sub(r'^version:\s*\S+', f'version: {new_ver}',
+                                     content, flags=re.MULTILINE)
+        else:
+            updated_content, new_ver = bump_version(content)
         work_skill_md.write_text(updated_content, encoding='utf-8')
         print(f"  {cur_ver} → {new_ver}")
+        print()
+
+        # Step 2.7: 更新 README.md
+        print("■ Step 2.7: 更新 README.md")
+        update_readme(work_dir, token)
         print()
 
         # Step 3: git add + staged grep + commit + push
@@ -401,6 +507,7 @@ def main():
     parser.add_argument('--repo', default='hermes-skills', help='GitHub 仓库名')
     parser.add_argument('--skill-dir', help='本地 skill 目录（默认 ~/.hermes/skills/<name>）')
     parser.add_argument('--token', help='GitHub Token（默认从 GITHUB_TOKEN 环境变量读取）')
+    parser.add_argument('--version', help='指定版本号（如 1.3.0），不传则自动 bump patch')
     args = parser.parse_args()
 
     token = args.token or os.environ.get('GITHUB_TOKEN', '')
@@ -414,7 +521,7 @@ def main():
         print(f"❌ Skill 目录不存在: {skill_dir}")
         sys.exit(1)
 
-    publish(args.skill_name, args.user, args.repo, skill_dir, token)
+    publish(args.skill_name, args.user, args.repo, skill_dir, token, args.version)
 
 
 if __name__ == '__main__':

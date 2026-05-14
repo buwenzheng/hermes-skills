@@ -439,6 +439,7 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str, 
         else:
             # 版本未改 → 正常 bump patch
             updated_content, new_ver = bump_version(content)
+            print(f"  [DEBUG] else分支: remote_ver={remote_ver}, cur_ver={cur_ver}, new_ver={new_ver}")
         work_skill_md.write_text(updated_content, encoding='utf-8')
         print(f"  {cur_ver} → {new_ver}")
         print()

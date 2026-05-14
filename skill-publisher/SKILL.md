@@ -7,7 +7,7 @@ description: >-
   skill-audit, and only proceeds if the result is APPROVED. Direct push to main,
   bumps version, isolates sensitive files, updates README. Requires skill-audit
   APPROVED. Triggered manually — never automated.
-version: 2.3.2
+version: 2.3.3
 author: Hermes Agent
 license: MIT
 metadata:
@@ -177,6 +177,7 @@ Step 6: 自动 pin 本机 skill（防止 curator 归档）
 **v2.1.1 修复记录**：见 `references/publish-skill-v2.1.1-fixes.md`（目录嵌套、代理硬编码、force-push 等 6 项修复）。
 
 **v2.3.0 变更记录**：见 `references/publish-skill-v2.3.0-changes.md`（--work-dir、--version、README 自动更新、代理从 .env 读取等）。
+**v2.3.2 变更记录**：见 `references/publish-skill-v2.3.2-changes.md`（递归目录查找、修复 finally 误删工作目录、HERMES_WORK_DIR 环境变量）。
 
 ---
 
@@ -259,7 +260,7 @@ Step 6: 自动 pin 本机 skill（防止 curator 归档）
 
 20. **run() 函数 stdout 为 None** — `subprocess.run` 在网络超时等场景下 stdout/stderr 可能为 None，直接切片 `[:300]` 会 TypeError。已修复为 `(result.stdout or '')[:300]`。
 
-21. **用户说 "push" 不等于 git push** — "push skill"、"push 到 GitHub"、"提交"、"推送" 都是 skill-publisher 的触发词。收到这些指令时必须加载 skill-publisher 并走完整流程（audit → publish），不能当成普通 git push 直接操作。历史教训：2026-05-13 用户说 push siyuan-custom，agent 跳过了 audit 和 publish 直接 git push，用户明确指出这是错误的。
+21. **用户说 "push" 不等于 git push** — "push skill"、"push 到 GitHub"、"提交"、"推送"、"上传" 都是 skill-publisher 的触发词。收到这些指令时 **必须先跑 skill-audit，拿到 APPROVED 后再跑 skill-publisher**。不能当成普通 git push 直接操作。**这是最高频错误，多次被用户纠正。** 历史教训：2026-05-13 和 2026-05-14 用户说 push skill，agent 跳过了 audit 直接 publish 或 git push，用户明确指出这是错误的。
 
 22. **README.md 在每次发布时自动更新** — Step 2.7 会扫描仓库内所有 skill 目录，从 SKILL.md frontmatter 提取 name/version/description/category，重新生成"现有技能"表格。如果 README 中没有 `## 现有技能` 段落，脚本会警告但不中断。
 
@@ -268,6 +269,10 @@ Step 6: 自动 pin 本机 skill（防止 curator 归档）
 24. **YAML 多行 description（`>-` / `|`）在 README 更新时被截断** — `update_readme` 函数用正则提取 frontmatter 时，`description: >-` 只匹配到 `>-` 两个字符。v2.2.0 已修复：`_extract_desc()` 函数能识别 `>-`、`>`、`|`、`|-` 等 YAML 多行语法，收集后续缩进行拼接为完整描述（截断到 80 字符）。如果 description 仍然异常，检查 SKILL.md frontmatter 中 `description:` 后是否跟了正确的 YAML 多行标记。
 
 25. **代理必须在 clone 前设置** — 代理配置（Step 1.5）必须在 Step 2 clone 之前执行，否则 clone 阶段不走代理会超时。代理地址从 .env 的 `HTTP_PROXY` / `HTTPS_PROXY` 读取，禁止硬编码。
+
+26. **Skill 目录查找不支持分类子目录** — 脚本查找 skill 目录时，不能假设所有 skill 都在 `~/.hermes/skills/<name>/`。实际 skill 可能在 `~/.hermes/skills/<category>/<name>/`（如 `productivity/skill-publisher`）。v2.3.2 已修复：使用 `Path.rglob(name)` 递归搜索。如果仍找不到，检查 `~/.hermes/skills/` 下的目录结构。
+
+27. **finally 块误删用户工作目录** — 旧版脚本的 `finally` 块会 `shutil.rmtree(work_dir)`，包括用户通过 `--work-dir` 或 `HERMES_WORK_DIR` 指定的现有仓库目录。v2.3.2 已修复：只删除脚本自己创建的临时目录（`/tmp/<skill>-push`），不删除用户指定的工作目录。如果发现工作目录被意外删除，检查脚本的 finally 逻辑是否正确区分了临时目录和用户目录。
 
 ---
 

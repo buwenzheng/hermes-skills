@@ -324,6 +324,26 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str, 
         print(f"目标 : {user}/{repo}")
         print()
 
+        # Step 0: 强制安全审核
+        print("■ Step 0: 安全审核 (skill-audit)")
+        audit_script = Path.home() / '.hermes' / 'skills' / 'productivity' / 'skill-audit' / 'scripts' / 'audit_scan.py'
+        if not audit_script.exists():
+            print(f"  ⚠ 找不到 audit 脚本: {audit_script}")
+            print(f"  ⚠ 跳过审核继续发布")
+        else:
+            audit_result = subprocess.run(
+                [sys.executable, str(audit_script), str(skill_dir)],
+                capture_output=True, text=True, timeout=120
+            )
+            print(audit_result.stdout, end='')
+            if audit_result.returncode != 0:
+                print(f"  ❌ 审核未通过，终止发布")
+                sys.exit(1)
+            if 'APPROVED' not in audit_result.stdout:
+                print(f"  ❌ 审核结果不是 APPROVED，终止发布")
+                sys.exit(1)
+            print()
+
         # Step 1: 确认仓库存在
         print("■ Step 1: 确认仓库存在")
         if not check_repo_exists(user, repo, token):

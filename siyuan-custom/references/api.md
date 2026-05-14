@@ -109,13 +109,13 @@ API Token 在思源笔记设置 → 关于 → API Token 中获取。
 | `/api/filetree/getPathByID` | `{"path": "..."}` | 正常 dict |
 | `/api/filetree/getIDsByHPath` | `["id1", "id2"]` | **直接是列表** |
 | `/api/filetree/readDir` | `[{"name":"...", "isDir":true}]` | **直接是列表** |
-| `/api/block/insertBlock` | `[{"id":"...", ...}]` | **blocks 列表** |
-| `/api/block/appendBlock` | `[{"id":"...", ...}]` | 同上 |
-| `/api/block/prependBlock` | `[{"id":"...", ...}]` | 同上 |
+| `/api/block/insertBlock` | `[{doOperations: [{id: "...", ...}]}]` | ⚠️ 块 ID 在 `data[0].doOperations[0].id` |
+| `/api/block/appendBlock` | 同上 | 同上 |
+| `/api/block/prependBlock` | 同上 | 同上 |
 | `/api/block/getChildBlocks` | `[{"id":"...", ...}]` | **直接是列表** |
 | `/api/block/getBlockKramdown` | `{"id":"...", "kramdown":"..."}` | 正常 dict |
-| `/api/block/updateBlock` | `{"id":"...", "doVal":"..."}` | 正常 dict |
-| `/api/file/getFile` | **纯文本** (非 JSON) | 直接返回文件内容 |
+| `/api/block/updateBlock` | `null` | ⚠️ 请求体必须用 `{id, dataType, data}` 格式 |
+| `/api/file/getFile` | 原始文件内容 | `.sy` 文件返回 JSON，其他返回纯文本 |
 | `/api/file/putFile` | `{"code":0}` | 需 multipart/form-data |
 | `/api/attr/getBlockAttrs` | `{"id":"...", "key":"val"}` | 正常 dict |
 | `/api/template/render` | `{"html":"..."}` 或 `null` | **可能为 null** |
@@ -125,8 +125,11 @@ API Token 在思源笔记设置 → 关于 → API Token 中获取。
 | `/api/asset/upload` | `{"errFiles":null, "succMap":{}}` | **succMap 可能为空** |
 
 **编码规则**：
+- `insertBlock`/`appendBlock`/`prependBlock` 返回格式是 `[{doOperations: [{id: "..."}]}]`，块 ID 在 `data[0].doOperations[0].id`
+- `updateBlock` 请求体必须用 `{id, dataType, data}` 格式，用 `{id, markdown}` 会返回 code=0 但内容不更新（静默失败）
+- `setBlockAttrs` 请求体必须用 `{id, attrs: {...}}` 格式，平铺传递会返回 code=0 但属性不写入
 - 需要对 `data` 做 `isinstance` 检查，不能假设一定是 dict
-- `getFile` 返回纯文本，失败时才返回 JSON
+- `getFile` 返回原始文件内容（`.sy` 文件为 JSON，其他为纯文本），失败时返回 `{"code":-1, ...}`
 - `putFile` 必须用 `multipart/form-data`，不能用 JSON body
 - `getIDsByHPath` 需要同时传 `notebook` 和 `path` 参数
 - `exportResources` 的 `paths` 参数需要**工作区完整路径**（`/data/<nb_id>/<name>`），不是 hpath
@@ -135,6 +138,13 @@ API Token 在思源笔记设置 → 关于 → API Token 中获取。
 ## 🚨 重要警告：中文编码
 
 **禁止使用 curl 直接推送包含中文的内容**，会导致乱码。必须使用 Python 脚本调用 API。
+
+## SQL 查询限制
+
+- `/api/query/sql` 是**只读**的：SELECT 正常执行，INSERT/UPDATE/DELETE 返回 code=0 但**不执行**
+- 官方 API 无专门搜索端点，SQL 是唯一搜索方式
+- 默认限制 64 条结果，必须显式加 `LIMIT`
+- `renameDocByID` 不更新 blocks 表 hpath，搜索无法命中改名后的文档
 
 ```python
 # ✅ 正确
@@ -165,8 +175,8 @@ python3 scripts/siyuan_api.py query_sql "SELECT * FROM blocks WHERE type='d' LIM
 # 创建文档
 python3 scripts/siyuan_api.py create_doc <笔记本ID> /路径 "标题" "# 内容"
 
-# 搜索文档
-python3 scripts/siyuan_api.py search_docs "关键词"
+# 搜索文档（命令名是 search_doc，不是 search_docs）
+python3 scripts/siyuan_api.py search_doc "关键词"
 ```
 
 ## 文件操作警告

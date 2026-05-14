@@ -227,10 +227,13 @@ def cmd_set_notebook_conf(config, notebook_id, conf_json):
 # ─────────────────────────────────────────
 
 def _build_doc_tree(config, notebook_id):
-    """从 API 重新构建文档树"""
-    # 思源 SQL API 默认限制 64 条结果，必须加足够大的 LIMIT
+    """从 API 重新构建文档树
+    过滤条件：type='d' AND content IS NOT NULL
+    原因：思源 deleteBlock/removeDocByID 不真正删除 blocks 表记录，
+    只清空内容或删文件，留下 type='d' 但 content=NULL 的孤儿记录
+    """
     result = api_request(config, "/api/query/sql", {
-        "stmt": f'SELECT id, path, hpath, name, type FROM blocks WHERE box="{notebook_id}" AND type="d" ORDER BY hpath ASC LIMIT 10000'
+        "stmt": f'SELECT id, path, hpath, name, type FROM blocks WHERE box="{notebook_id}" AND type="d" AND content IS NOT NULL ORDER BY hpath ASC LIMIT 10000'
     })
     docs = result.get("data", [])
     return docs
@@ -289,7 +292,11 @@ def cmd_search_doc(config, query, notebook_id=None):
 # ─────────────────────────────────────────
 
 def cmd_create_doc(config, notebook_id, path, title, markdown_content=""):
-    """创建文档"""
+    """创建文档
+    注意：命令行传入的 \n 会被 shell 当作字面量，这里自动转换为真实换行
+    """
+    # 将 shell 传入的字面 \n 转换为真实换行符
+    markdown_content = markdown_content.replace("\\n", "\n")
     data = {"notebook": notebook_id, "path": path, "markdown": markdown_content}
     result = api_request(config, "/api/filetree/createDocWithMd", data)
     if result.get("code") == 0:
@@ -335,7 +342,11 @@ def cmd_rename_doc(config, notebook_id, path, new_name):
 
 
 def cmd_rename_doc_by_id(config, doc_id, new_name):
-    """重命名文档（按 ID）"""
+    """重命名文档（按 ID）
+    注意：思源 renameDocByID 只改文件名，不更新 blocks 表的 hpath。
+    思源 SQL API 只读，无法手动同步。search_doc 搜不到改名后的文档，
+    需要用 doc_tree 或 getHPathByID 查找。
+    """
     result = api_request(config, "/api/filetree/renameDocByID", {"id": doc_id, "title": new_name})
     if result.get("code") == 0:
         print(f"文档已重命名: {new_name}")
@@ -433,18 +444,33 @@ def cmd_get_path_by_id(config, block_id):
 # 块操作
 # ─────────────────────────────────────────
 
+def _extract_block_id(result):
+    """从 insertBlock/appendBlock/prependBlock 返回中提取块ID
+    API 实际返回格式: [{doOperations: [{id: "...", ...}]}]
+    """
+    data = result.get("data", [])
+    if isinstance(data, list) and data:
+        # 格式1: [{doOperations: [{id: "..."}]}] — 思源实际格式
+        ops = data[0].get("doOperations", [])
+        if isinstance(ops, list) and ops:
+            bid = ops[0].get("id", "")
+            if bid:
+                return bid
+        # 格式2: [{id: "..."}] — 兼容旧版假设
+        bid = data[0].get("id", "")
+        if bid:
+            return bid
+    elif isinstance(data, dict):
+        return data.get("id", "") or data.get("block", {}).get("id", "")
+    return ""
+
+
 def cmd_insert_block(config, parent_id, data_type, markdown):
     """插入块"""
     data = {"parentID": parent_id, "dataType": data_type, "data": markdown}
     result = api_request(config, "/api/block/insertBlock", data)
     if result.get("code") == 0:
-        blocks = result.get("data", [])
-        if isinstance(blocks, list) and blocks:
-            block_id = blocks[0].get("id", "")
-        elif isinstance(blocks, dict):
-            block_id = blocks.get("block", {}).get("id", "")
-        else:
-            block_id = ""
+        block_id = _extract_block_id(result)
         print(f"块插入成功: {block_id}")
         return block_id
     else:
@@ -457,13 +483,7 @@ def cmd_append_block(config, parent_id, block_type, markdown):
     data = {"parentID": parent_id, "dataType": block_type, "data": markdown}
     result = api_request(config, "/api/block/appendBlock", data)
     if result.get("code") == 0:
-        blocks = result.get("data", [])
-        if isinstance(blocks, list) and blocks:
-            block_id = blocks[0].get("id", "")
-        elif isinstance(blocks, dict):
-            block_id = blocks.get("block", {}).get("id", "")
-        else:
-            block_id = ""
+        block_id = _extract_block_id(result)
         print(f"块追加成功: {block_id}")
         return block_id
     else:
@@ -476,13 +496,7 @@ def cmd_prepend_block(config, parent_id, block_type, markdown):
     data = {"parentID": parent_id, "dataType": block_type, "data": markdown}
     result = api_request(config, "/api/block/prependBlock", data)
     if result.get("code") == 0:
-        blocks = result.get("data", [])
-        if isinstance(blocks, list) and blocks:
-            block_id = blocks[0].get("id", "")
-        elif isinstance(blocks, dict):
-            block_id = blocks.get("block", {}).get("id", "")
-        else:
-            block_id = ""
+        block_id = _extract_block_id(result)
         print(f"块前置成功: {block_id}")
         return block_id
     else:
@@ -491,8 +505,10 @@ def cmd_prepend_block(config, parent_id, block_type, markdown):
 
 
 def cmd_update_block(config, block_id, markdown):
-    """更新块内容"""
-    data = {"id": block_id, "markdown": markdown}
+    """更新块内容
+    注意：思源 API 需要 dataType + data 格式，用 {"id", "markdown"} 不生效
+    """
+    data = {"id": block_id, "dataType": "markdown", "data": markdown}
     result = api_request(config, "/api/block/updateBlock", data)
     if result.get("code") == 0:
         print(f"块更新成功: {block_id}")
@@ -591,14 +607,16 @@ def cmd_get_block_attrs(config, block_id):
 
 
 def cmd_set_block_attrs(config, block_id, attrs_json):
-    """设置块属性（JSON 字符串）"""
+    """设置块属性（JSON 字符串）
+    注意：思源 API 需要 {"id": "...", "attrs": {...}} 格式，平铺传递不生效
+    """
     try:
         attrs = json.loads(attrs_json)
     except json.JSONDecodeError:
         print("错误: attrs_json 应为合法 JSON 字符串", file=sys.stderr)
         sys.exit(1)
-    attrs["id"] = block_id
-    result = api_request(config, "/api/attr/setBlockAttrs", attrs)
+    payload = {"id": block_id, "attrs": attrs}
+    result = api_request(config, "/api/attr/setBlockAttrs", payload)
     if result.get("code") == 0:
         print(f"块属性已保存: {block_id}")
     else:

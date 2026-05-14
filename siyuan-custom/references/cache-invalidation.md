@@ -18,8 +18,19 @@
 | remove_notebook | notebooks + doc_tree:{id} |
 | create_doc | doc_tree:{notebook_id} |
 | remove_doc | doc_tree:{notebook_id} |
-| remove_doc_by_id | doc_tree:* |
+| remove_doc_by_id | doc_tree:* (前缀匹配) |
+| rename_doc_by_id | doc_tree:* (前缀匹配) |
+| move_docs_by_id | doc_tree:* (前缀匹配) |
 | move_docs | doc_tree:{from} + doc_tree:{to} |
+
+### `cache_invalidate` 前缀匹配
+
+`cache_invalidate(key)` 现在支持 `*` 后缀前缀匹配：
+- `cache_invalidate("doc_tree:*")` → 删除所有 `doc_tree:` 开头的缓存键
+- `cache_invalidate("notebooks")` → 精确删除 `notebooks` 键
+- `cache_invalidate()` → 清除所有缓存
+
+之前的 bug：`cmd_remove_doc_by_id` 等用 ID 操作的命令调用 `cache_invalidate("doc_tree:*")`，但 `*` 被当作普通字符串，不会匹配任何键，导致缓存实际上没被清除。v1.2.5 修复：`cache_invalidate` 识别 `*` 后缀并做前缀匹配。
 
 ### 用户纠正
 

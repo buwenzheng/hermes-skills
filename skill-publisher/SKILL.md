@@ -7,7 +7,7 @@ description: >-
   automated regex scan (audit_scan.py) plus LLM deep review (agent reads code).
   Only proceeds if both layers APPROVED. Direct push to main, bumps version,
   isolates sensitive files, updates README.
-version: 2.4.2
+version: 2.4.4
 author: Hermes Agent
 license: MIT
 metadata:

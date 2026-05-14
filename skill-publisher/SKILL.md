@@ -3,11 +3,11 @@ name: skill-publisher
 description: >-
   Use when the user asks to publish, push, push skill, 提交, 发布, 推送, 上传,
   or send a local Hermes skill to GitHub. Also triggers on "push 到 GitHub",
-  "提交到 GitHub", "发布 skill", "推送 skill". Reads the audit report from
-  skill-audit, and only proceeds if the result is APPROVED. Direct push to main,
-  bumps version, isolates sensitive files, updates README. Requires skill-audit
-  APPROVED. Triggered manually — never automated.
-version: 2.3.3
+  "提交到 GitHub", "发布 skill", "推送 skill". Two-layer pre-check:
+  automated regex scan (audit_scan.py) plus LLM deep review (agent reads code).
+  Only proceeds if both layers APPROVED. Direct push to main, bumps version,
+  isolates sensitive files, updates README.
+version: 2.4.0
 author: Hermes Agent
 license: MIT
 metadata:
@@ -26,7 +26,7 @@ required_environment_variables:
 
 ## 核心原则
 
-**未经 skill-audit 审核通过，一律不发布。**
+**未经 skill-audit 审核通过，一律不发布。** 脚本内置了 Step 0 自动跑 audit，审核不过直接终止，不依赖人记得手动跑。
 
 ---
 
@@ -107,11 +107,12 @@ python3 ~/.hermes/skills/productivity/skill-publisher/scripts/publish_skill.py s
 
 ## 前置检查
 
-发布前必须确认：
+发布前必须完成两层审核：
 
-1. **skill-audit 已跑过且 APPROVED** — 询问用户审核报告的 APPROVED 结果
-2. **审核后代码没有再改动** — 如果改过，必须重新跑 skill-audit
-3. **GITHUB_TOKEN 可用** — `curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/repos/buwenzheng/hermes-skills` 返回 200
+1. **自动化扫描（audit_scan.py）** — 脚本内置 Step 0a，自动执行，无需手动操作
+2. **LLM 深度审核（agent 执行）** — Step 0b，agent 加载 `skill-audit`，按其 SKILL.md 中 "Step 2: LLM 深度审核" 的指引，读取目标 skill 的 SKILL.md 和所有脚本代码，自行判断安全/质量问题
+
+两层都通过后才进入发布流程。
 
 如果用户说"直接发布"而不先跑 audit，**拒绝并引导先跑审核**：
 
@@ -126,10 +127,9 @@ python3 ~/.hermes/skills/productivity/skill-publisher/scripts/publish_skill.py s
 ## 完整流程
 
 ```
-skill-audit APPROVED
-    ↓
-skill-publisher（直接 push main）
-    ↓
+Step 0a: skill-audit 自动化扫描（脚本内置，audit_scan.py，APPROVED 才继续）
+Step 0b: skill-audit LLM 深度审核（agent 读 SKILL.md + 脚本代码，自行判断）
+    ↓ FAIL → 终止发布
 Step 1: 确认仓库存在
     ↓
 Step 1.5: 从 .env 读取 HTTP_PROXY / HTTPS_PROXY，写入 git config
@@ -159,6 +159,8 @@ Step 6: 自动 pin 本机 skill（防止 curator 归档）
 
 | Step | 说明 |
 |------|------|
+| 0a | 安全审核（自动化）：脚本内置运行 `audit_scan.py`，不通过则终止发布 |
+| 0b | 安全审核（LLM）：agent 加载 skill-audit，读取目标 skill 的 SKILL.md + 所有脚本代码，自行判断安全/质量问题。严重问题 → 终止发布 |
 | 1 | 确认仓库存在 |
 | 1.5 | 从 .env 读取 `HTTP_PROXY` / `HTTPS_PROXY`，写入 git config（clone 和 push 前自动设置） |
 | 2 | 使用 `HERMES_WORK_DIR` 工作目录（或 clone）→ 复制 skill → 隔离敏感文件 |
@@ -183,7 +185,7 @@ Step 6: 自动 pin 本机 skill（防止 curator 归档）
 
 ## 常见陷阱（Common Pitfalls）
 
-1. **跳过 audit 直接发布** — 强制要求先有 APPROVED 结果。没有就是拒绝发布。
+1. **~~跳过 audit 直接发布~~** — v2.3.3 起脚本内置 Step 0 自动跑 audit，审核不过直接终止。不再依赖人记得手动跑。如果 audit 脚本不存在（`~/.hermes/skills/productivity/skill-audit/scripts/audit_scan.py`），会警告但继续发布。
 
 2. **用普通 git push 代替 skill-publisher** — 这是最高频的错误。用户说「push」「提交」时，不能直接 `git push`，必须走 audit → skill-publisher 流程。直接 push 会跳过：敏感文件隔离、版本号 bump、staged grep、README 更新、PUBLISHED.md 更新、curator pin。**skill-publisher 的 description 里明确写了触发词（push/提交/推送/上传），加载 skill 后按流程走。**
 
@@ -260,7 +262,7 @@ Step 6: 自动 pin 本机 skill（防止 curator 归档）
 
 20. **run() 函数 stdout 为 None** — `subprocess.run` 在网络超时等场景下 stdout/stderr 可能为 None，直接切片 `[:300]` 会 TypeError。已修复为 `(result.stdout or '')[:300]`。
 
-21. **用户说 "push" 不等于 git push** — "push skill"、"push 到 GitHub"、"提交"、"推送"、"上传" 都是 skill-publisher 的触发词。收到这些指令时 **必须先跑 skill-audit，拿到 APPROVED 后再跑 skill-publisher**。不能当成普通 git push 直接操作。**这是最高频错误，多次被用户纠正。** 历史教训：2026-05-13 和 2026-05-14 用户说 push skill，agent 跳过了 audit 直接 publish 或 git push，用户明确指出这是错误的。
+21. **用户说 "push" 不等于 git push** — "push skill"、"push 到 GitHub"、"提交"、"推送"、"上传" 都是 skill-publisher 的触发词。收到这些指令时 **脚本会自动先跑 skill-audit（Step 0），APPROVED 后继续发布**。不能当成普通 git push 直接操作。**这是最高频错误，多次被用户纠正。** 历史教训：2026-05-13 和 2026-05-14 用户说 push skill，agent 跳过了 audit 直接 publish 或 git push，用户明确指出这是错误的。v2.3.3 起 audit 已内置到脚本中。
 
 22. **README.md 在每次发布时自动更新** — Step 2.7 会扫描仓库内所有 skill 目录，从 SKILL.md frontmatter 提取 name/version/description/category，重新生成"现有技能"表格。如果 README 中没有 `## 现有技能` 段落，脚本会警告但不中断。
 

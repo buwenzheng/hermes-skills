@@ -302,10 +302,20 @@ def update_readme(work_dir: Path, token: str):
     print(f"  ✓ README.md 已更新（{len(skills)} 个 skill）")
 
 
-def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str, explicit_version: str = None):
+def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str, explicit_version: str = None, work_dir_override: str = None):
     # 平铺名称：去掉分类前缀
     flat_name = get_flat_name(skill_name)
-    work_dir = Path(f'/tmp/{flat_name}-push')
+    if work_dir_override:
+        work_dir = Path(work_dir_override)
+        if not work_dir.exists() or not (work_dir / '.git').exists():
+            print(f"❌ 工作目录不存在或不是 git 仓库: {work_dir}")
+            sys.exit(1)
+        # 清理旧的 skill 目录（如果存在）
+        old_skill = work_dir / flat_name
+        if old_skill.exists():
+            shutil.rmtree(old_skill)
+    else:
+        work_dir = Path(f'/tmp/{flat_name}-push')
     quarantine = Path(f'/tmp/skill-publisher-quarantine-{int(time.time())}')
 
     try:
@@ -322,20 +332,37 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str, 
         print(f"  ✓ 仓库存在")
         print()
 
-        # Step 2: clone + 复制 + 隔离
+        # Step 2: clone（或使用现有工作目录）+ 复制 + 隔离
         print("■ Step 2: clone + 复制 + 隔离")
-        if work_dir.exists():
-            shutil.rmtree(work_dir)
         quarantine.mkdir(parents=True, exist_ok=True)
-        quarantine.mkdir(parents=True, exist_ok=True)
-        # 代理配置：从环境变量读取（HTTP_PROXY / HTTPS_PROXY），写入 git config
-        proxy_config = get_proxy_config()
-        for key, val in proxy_config.items():
-            _git_config(work_dir, key, val)
 
-        run(['git', 'clone', '--depth', '1',
-             f'https://github.com/{user}/{repo}.git', str(work_dir)],
-            capture_output=False)
+        if work_dir_override:
+            # 使用现有工作目录，只需 pull 最新
+            print(f"  使用现有工作目录: {work_dir}")
+            proxy_config = get_proxy_config()
+            for key, val in proxy_config.items():
+                _git_config(work_dir, key, val)
+            default_branch = get_default_branch(user, repo, token)
+            pull = subprocess.run(
+                ['git', 'pull', 'origin', default_branch],
+                cwd=work_dir, capture_output=True, text=True
+            )
+            if pull.returncode != 0:
+                print(f"  ⚠ git pull 失败: {pull.stderr[:200]}")
+        else:
+            # 全新 clone
+            if work_dir.exists():
+                shutil.rmtree(work_dir)
+            # 代理配置：从环境变量读取（HTTP_PROXY / HTTPS_PROXY），写入 git config
+            proxy_config = get_proxy_config()
+            for key, val in proxy_config.items():
+                pass  # 代理在 clone 后设置
+            run(['git', 'clone', '--depth', '1',
+                 f'https://github.com/{user}/{repo}.git', str(work_dir)],
+                capture_output=False)
+            # clone 后设置代理（用于 push）
+            for key, val in proxy_config.items():
+                _git_config(work_dir, key, val)
 
         # 平铺：直接在仓库根目录创建 skill 目录
         target = work_dir / flat_name
@@ -498,7 +525,8 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str, 
         print(f"验证 : ✓ PASS")
 
     finally:
-        if work_dir.exists():
+        # 只删除脚本创建的临时目录，不删除用户指定的工作目录
+        if not work_dir_override and work_dir.exists():
             shutil.rmtree(work_dir)
         if quarantine.exists():
             shutil.rmtree(quarantine)
@@ -512,6 +540,7 @@ def main():
     parser.add_argument('--skill-dir', help='本地 skill 目录（默认 ~/.hermes/skills/<name>）')
     parser.add_argument('--token', help='GitHub Token（默认从 GITHUB_TOKEN 环境变量读取）')
     parser.add_argument('--version', help='指定版本号（如 1.3.0），不传则自动 bump patch')
+    parser.add_argument('--work-dir', help='已有仓库工作目录（跳过 clone，直接用现有目录）')
     args = parser.parse_args()
 
     token = args.token or os.environ.get('GITHUB_TOKEN', '')
@@ -519,13 +548,21 @@ def main():
         print("❌ 缺少 GITHUB_TOKEN，请设置环境变量或传 --token 参数")
         sys.exit(1)
 
-    skill_dir = Path(args.skill_dir) if args.skill_dir else \
-        Path.home() / '.hermes' / 'skills' / args.skill_name
-    if not skill_dir.exists():
-        print(f"❌ Skill 目录不存在: {skill_dir}")
-        sys.exit(1)
+    skill_dir = Path(args.skill_dir) if args.skill_dir else None
+    if not skill_dir or not skill_dir.exists():
+        # 递归查找：~/.hermes/skills/ 下可能有子目录（如 productivity/skill-publisher）
+        base = Path.home() / '.hermes' / 'skills'
+        candidates = list(base.rglob(args.skill_name))
+        if candidates:
+            skill_dir = candidates[0]
+        else:
+            print(f"❌ Skill 目录不存在: {args.skill_name}")
+            print(f"   搜索路径: {base} (含子目录)")
+            sys.exit(1)
 
-    publish(args.skill_name, args.user, args.repo, skill_dir, token, args.version)
+    # 优先级：--work-dir 参数 > HERMES_WORK_DIR 环境变量 > 默认（clone 到 /tmp）
+    work_dir = args.work_dir or os.environ.get('HERMES_WORK_DIR', '')
+    publish(args.skill_name, args.user, args.repo, skill_dir, token, args.version, work_dir or None)
 
 
 if __name__ == '__main__':

@@ -10,7 +10,7 @@
 | [hermes-config](./hermes-config) | 1.0.0 | "Use when modifying Hermes Agent configuration: adding providers, changing model | uncategorized |
 | [siyuan-custom](./siyuan-custom) | 1.2.3 | Use when the user asks about, queries, searches, creates, edits, or manages cont | uncategorized |
 | [skill-audit](./skill-audit) | 1.0.0 | Use when the user asks to audit, scan, or review a local Hermes skill for securi | uncategorized |
-| [skill-publisher](./skill-publisher) | 2.3.0 | Use when the user asks to publish, push, push skill, 提交, 发布, 推送, 上传, or send a l | uncategorized |
+| [skill-publisher](./skill-publisher) | 2.3.1 | Use when the user asks to publish, push, push skill, 提交, 发布, 推送, 上传, or send a l | uncategorized |
 
 ## 安装技能
 

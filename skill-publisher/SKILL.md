@@ -7,7 +7,7 @@ description: >-
   skill-audit, and only proceeds if the result is APPROVED. Direct push to main,
   bumps version, isolates sensitive files, updates README. Requires skill-audit
   APPROVED. Triggered manually — never automated.
-version: 2.3.0
+version: 2.3.1
 author: Hermes Agent
 license: MIT
 metadata:
@@ -49,7 +49,14 @@ required_environment_variables:
    ```
    脚本在 clone 和 push 前自动从环境变量读取代理地址，写入 git config。
    **禁止在脚本中硬编码代理地址**，必须从 .env 读取。
-3. 确认目标 skill 已通过 `skill-audit` 审核（结果为 APPROVED）
+3. 配置工作目录（写入 .env，脚本自动读取 HERMES_WORK_DIR）：
+   ```bash
+   echo 'HERMES_WORK_DIR=/home/hermes/hermes-work/default/hermes-skills' >> ~/.hermes/.env
+   ```
+   脚本优先使用 `--work-dir` 参数，其次读取 `HERMES_WORK_DIR` 环境变量，
+   都没有则 clone 到 `/tmp/<skill>-push`。配好后无需每次传 `--work-dir`。
+
+4. 确认目标 skill 已通过 `skill-audit` 审核（结果为 APPROVED）
 **飞书/聊天平台发布时**：token 会被日志截断（如 `ghp_IG...nJfb`），session 结束后无法恢复。必须先持久化到 .env，再发布。
 
 ### ⚠️ Token 安全配置（重要）
@@ -86,6 +93,8 @@ python3 ~/.hermes/skills/productivity/skill-publisher/scripts/publish_skill.py s
 python3 ~/.hermes/skills/productivity/skill-publisher/scripts/publish_skill.py mcp/music-tag-web-mcp --user buwenzheng --repo hermes-skills
 # 指定版本号（如大版本升级，跳过自动 bump）
 python3 ~/.hermes/skills/productivity/skill-publisher/scripts/publish_skill.py siyuan-custom --user buwenzheng --repo hermes-skills --version 2.0.0
+# 使用现有工作目录（跳过 clone，避免网络超时）
+python3 ~/.hermes/skills/productivity/skill-publisher/scripts/publish_skill.py siyuan-custom --user buwenzheng --repo hermes-skills --work-dir ~/hermes-work/default/hermes-skills
 ```
 
 脚本自动完成全部流程：
@@ -125,7 +134,7 @@ Step 1: 确认仓库存在
     ↓
 Step 1.5: 从 .env 读取 HTTP_PROXY / HTTPS_PROXY，写入 git config
     ↓
-Step 2: clone + 复制 skill + 隔离敏感文件
+Step 2: 使用 HERMES_WORK_DIR 工作目录（或 clone）+ 复制 skill + 隔离敏感文件
     ↓
 Step 2.5: 版本号 bump（patch +1 或指定版本）
     ↓
@@ -152,7 +161,7 @@ Step 6: 自动 pin 本机 skill（防止 curator 归档）
 |------|------|
 | 1 | 确认仓库存在 |
 | 1.5 | 从 .env 读取 `HTTP_PROXY` / `HTTPS_PROXY`，写入 git config（clone 和 push 前自动设置） |
-| 2 | clone → 复制 skill → 隔离敏感文件（`_config.json`/`*.log`/`.env` 等） |
+| 2 | 使用 `HERMES_WORK_DIR` 工作目录（或 clone）→ 复制 skill → 隔离敏感文件 |
 | 2.5 | 版本号 bump（patch +1）或使用 `--version` 指定版本 |
 | 2.7 | 更新 `README.md`：扫描仓库内所有 skill 目录，重新生成"现有技能"表格（名称、版本、说明、分类） |
 | 3 | git add → staged grep 扫描 → commit → push 到 main |
@@ -167,13 +176,17 @@ Step 6: 自动 pin 本机 skill（防止 curator 归档）
 **v2.2.0 修复记录**：见 `references/publish-skill-v2.2.0-changes.md`（触发词扩展、README 自动更新、.env 加载修复）。
 **v2.1.1 修复记录**：见 `references/publish-skill-v2.1.1-fixes.md`（目录嵌套、代理硬编码、force-push 等 6 项修复）。
 
+**v2.3.0 变更记录**：见 `references/publish-skill-v2.3.0-changes.md`（--work-dir、--version、README 自动更新、代理从 .env 读取等）。
+
 ---
 
 ## 常见陷阱（Common Pitfalls）
 
 1. **跳过 audit 直接发布** — 强制要求先有 APPROVED 结果。没有就是拒绝发布。
 
-2. **audit 后改了代码** — 任何代码改动都必须重新跑 skill-audit。
+2. **用普通 git push 代替 skill-publisher** — 这是最高频的错误。用户说「push」「提交」时，不能直接 `git push`，必须走 audit → skill-publisher 流程。直接 push 会跳过：敏感文件隔离、版本号 bump、staged grep、README 更新、PUBLISHED.md 更新、curator pin。**skill-publisher 的 description 里明确写了触发词（push/提交/推送/上传），加载 skill 后按流程走。**
+
+3. **audit 后改了代码** — 任何代码改动都必须重新跑 skill-audit。
 
 3. **staged grep 只扫代码文件** — README.md 也可能含 token，必须扫描所有 staged 文件（除 SKILL.md 外）。
 
@@ -203,21 +216,66 @@ Step 6: 自动 pin 本机 skill（防止 curator 归档）
 
 16. **自定义 skill 与官方同名冲突** — 发布官方 skill 的自定义版本时，必须先改名再首次发布（如 `siyuan` → `siyuan-custom`）。流程：`cp -r` 新目录 → 改 SKILL.md `name` 字段 → `rm -rf` 旧目录 → 在仓库中 `git rm -rf <旧名> && git add <新名>` → commit + push。同名发布后用户安装会装成官方版本。
 
-17. **publish_skill.py 失效时的手动发布流程** — 脚本报错（网络/token）时，用现有仓库目录手动操作更可靠：`cd ~/hermes-work/default/hermes-skills && cp -r <skill-dir> ./ && rm -rf <skill>/__pycache__ <skill>/*_config.json <skill>/*_cache.json && sed -i 's/^version: X.Y.Z$/version: X.Y.(Z+1)/' <skill>/SKILL.md && git add <skill>/ && git commit -m "..." && GIT_ASKPASS=... git push origin main`。
+17. **publish_skill.py 失效时的手动发布流程** — 脚本报错（网络/token）时，用现有仓库目录手动操作更可靠：
+    ```
+    cd ~/hermes-work/default/hermes-skills
+    cp -r <skill-dir> ./
+    rm -rf <skill>/__pycache__ <skill>/*_config.json <skill>/*_cache.json
+    # 版本号：大版本用 sed 改 SKILL.md，小版本让脚本 bump
+    sed -i 's/^version: X.Y.Z$/version: X.Y.(Z+1)/' <skill>/SKILL.md
+    # 更新 README.md（扫描所有 skill 目录，重新生成表格）
+    python3 -c "
+    import re, os
+    from pathlib import Path
+    work = Path('.')
+    skills = []
+    for item in sorted(work.iterdir()):
+        if not item.is_dir(): continue
+        md = item / 'SKILL.md'
+        if not md.exists(): continue
+        c = md.read_text()
+        fm = re.search(r'^---\s*\n(.*?)\n---', c, re.DOTALL)
+        if not fm: continue
+        f = fm.group(1)
+        n = re.search(r'^name:\s*(\S+)', f, re.MULTILINE)
+        v = re.search(r'^version:\s*(\S+)', f, re.MULTILINE)
+        d = re.search(r'^description:\s*(.+)', f, re.MULTILINE)
+        skills.append((n.group(1) if n else item.name, v.group(1) if v else '?', d.group(1).strip()[:60] if d else ''))
+    tbl = '| Skill | 版本 | 说明 | 分类 |\n|-------|------|------|------|\n'
+    tbl += '\n'.join(f'| [{s[0]}](./{s[0]}) | {s[1]} | {s[2]} | - |' for s in skills)
+    readme = Path('README.md').read_text()
+    readme = re.sub(r'(## 现有技能\n\n).*?(\n## )', f'\\1{tbl}\n\\2', readme, count=1, flags=re.DOTALL)
+    Path('README.md').write_text(readme)
+    print(f'✓ README.md updated ({len(skills)} skills)')
+    "
+    git add <skill>/ README.md
+    git commit -m "..."
+    GIT_ASKPASS=... git push origin main
+    ```
 
-18. **版本号控制** — 不要手动改 SKILL.md 的版本号再让脚本 bump，脚本会多加一次。正确做法：大版本升级时用 `--version X.Y.Z` 指定，不传则自动 bump patch。
+18. **Skill 触发机制** — Hermes 的 skill 触发完全靠 LLM 匹配 SKILL.md frontmatter 中的 `description` 字段。LLM 看到的是 description 文本，不是 tags，不是关键词匹配。所以 description 必须包含用户可能使用的所有自然语言变体（中英文、push/publish/提交/推送/上传等）。如果用户说了某个词但 skill 没触发，第一件事就是检查 description 是否覆盖了那个词。
 
-19. **run() 函数 stdout 为 None** — `subprocess.run` 在网络超时等场景下 stdout/stderr 可能为 None，直接切片 `[:300]` 会 TypeError。已修复为 `(result.stdout or '')[:300]`。
+19. **版本号控制** — 不要手动改 SKILL.md 的版本号再让脚本 bump，脚本会多加一次。正确做法：大版本升级时用 `--version X.Y.Z` 指定，不传则自动 bump patch。
 
-18. **用户说 "push" 不等于 git push** — "push skill"、"push 到 GitHub"、"提交"、"推送" 都是 skill-publisher 的触发词。收到这些指令时必须加载 skill-publisher 并走完整流程（audit → publish），不能当成普通 git push 直接操作。历史教训：2026-05-13 用户说 push siyuan-custom，agent 跳过了 audit 和 publish 直接 git push，用户明确指出这是错误的。
+20. **run() 函数 stdout 为 None** — `subprocess.run` 在网络超时等场景下 stdout/stderr 可能为 None，直接切片 `[:300]` 会 TypeError。已修复为 `(result.stdout or '')[:300]`。
 
-19. **README.md 在每次发布时自动更新** — Step 2.7 会扫描仓库内所有 skill 目录，从 SKILL.md frontmatter 提取 name/version/description/category，重新生成"现有技能"表格。如果 README 中没有 `## 现有技能` 段落，脚本会警告但不中断。
+21. **用户说 "push" 不等于 git push** — "push skill"、"push 到 GitHub"、"提交"、"推送" 都是 skill-publisher 的触发词。收到这些指令时必须加载 skill-publisher 并走完整流程（audit → publish），不能当成普通 git push 直接操作。历史教训：2026-05-13 用户说 push siyuan-custom，agent 跳过了 audit 和 publish 直接 git push，用户明确指出这是错误的。
 
-20. **`--version` 指定版本 vs 自动 bump** — 不传 `--version` 时脚本自动 bump patch（1.0.0 → 1.0.1）。大版本/中版本升级时必须手动传 `--version 2.0.0`，否则会被脚本覆盖。不要在 SKILL.md 里手动改版本号再让脚本 bump，那样会多跳一个版本。
+22. **README.md 在每次发布时自动更新** — Step 2.7 会扫描仓库内所有 skill 目录，从 SKILL.md frontmatter 提取 name/version/description/category，重新生成"现有技能"表格。如果 README 中没有 `## 现有技能` 段落，脚本会警告但不中断。
 
-21. **YAML 多行 description（`>-` / `|`）在 README 更新时被截断** — `update_readme` 函数用正则提取 frontmatter 时，`description: >-` 只匹配到 `>-` 两个字符。v2.2.0 已修复：`_extract_desc()` 函数能识别 `>-`、`>`、`|`、`|-` 等 YAML 多行语法，收集后续缩进行拼接为完整描述（截断到 80 字符）。如果 description 仍然异常，检查 SKILL.md frontmatter 中 `description:` 后是否跟了正确的 YAML 多行标记。
+23. **`--version` 指定版本 vs 自动 bump** — 不传 `--version` 时脚本自动 bump patch（1.0.0 → 1.0.1）。大版本/中版本升级时必须手动传 `--version 2.0.0`，否则会被脚本覆盖。不要在 SKILL.md 里手动改版本号再让脚本 bump，那样会多跳一个版本。
+
+24. **YAML 多行 description（`>-` / `|`）在 README 更新时被截断** — `update_readme` 函数用正则提取 frontmatter 时，`description: >-` 只匹配到 `>-` 两个字符。v2.2.0 已修复：`_extract_desc()` 函数能识别 `>-`、`>`、`|`、`|-` 等 YAML 多行语法，收集后续缩进行拼接为完整描述（截断到 80 字符）。如果 description 仍然异常，检查 SKILL.md frontmatter 中 `description:` 后是否跟了正确的 YAML 多行标记。
+
+25. **代理必须在 clone 前设置** — 代理配置（Step 1.5）必须在 Step 2 clone 之前执行，否则 clone 阶段不走代理会超时。代理地址从 .env 的 `HTTP_PROXY` / `HTTPS_PROXY` 读取，禁止硬编码。
 
 ---
+
+## 版本号策略
+
+- **自动 bump patch**（默认）：适用于小修小改，1.0.0 → 1.0.1
+- **`--version` 指定**：适用于大版本升级、功能重构，如 1.1 → 2.0.0
+- **不要在 SKILL.md 里手动改版本号再让脚本 bump**：会导致版本号 +2（手动改的 + 脚本 bump 的）
 
 ## 禁止项
 

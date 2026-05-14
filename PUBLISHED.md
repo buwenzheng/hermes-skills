@@ -14,3 +14,6 @@
 | siyuan-custom | 1.2.2 | 2026-05-14 | `319ff03` |
 
 | skill-publisher | 2.2.0 | 2026-05-14 | `618711d` |
+
+| skill-publisher | 2.3.0 | 2026-05-14 | `b675b24` |
+| siyuan-custom | 1.2.4 | 2026-05-14 | `b675b24` |

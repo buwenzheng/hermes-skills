@@ -180,6 +180,8 @@ Step 6: 自动 pin 本机 skill（防止 curator 归档）
 
 **v2.3.0 变更记录**：见 `references/publish-skill-v2.3.0-changes.md`（--work-dir、--version、README 自动更新、代理从 .env 读取等）。
 **v2.3.2 变更记录**：见 `references/publish-skill-v2.3.2-changes.md`（递归目录查找、修复 finally 误删工作目录、HERMES_WORK_DIR 环境变量）。
+**v2.4.1 变更记录**：本地版本 ≠ 远程版本时跳过 bump，直接使用本地版本（用户手动改版本号不再被覆盖）。
+
 **v2.4.x 变更记录**：见 `references/proxy-pitfall.md`（subprocess 代理传递、LLM 审核步骤）。
 
 ---
@@ -286,6 +288,8 @@ Step 6: 自动 pin 本机 skill（防止 curator 归档）
 31. **GIT_ASKPASS 认证方式** — push 使用 GIT_ASKPASS 注入 token，禁止嵌入 remote URL。脚本自动创建 `/tmp/git-askpass.sh`（chmod 700）。如果手动 push 需同样设置：`GIT_ASKPASS=/tmp/git-askpass.sh git push origin main`。
 
 32. **代理必须在 push 前设置** — `export https_proxy=http://127.0.0.1:7890`，push 完后 `unset https_proxy`。代理地址从 .env 读取，禁止硬编码。
+
+33. **GitHub 仓库目录结构（扁平 vs 分类）** — Hermes 加载 skill 时递归扫描 `~/.hermes/skills/` 下所有 `SKILL.md`，不依赖目录层级。`category` 字段只是 metadata，不影响加载。因此 hermes-skills GitHub 仓库的目录结构对功能无影响，保持扁平（所有 skill 平铺在根目录）更简洁。发布脚本中 `skill_name.split('/')[-1]` 的平铺逻辑已覆盖此场景。
 
 ---
 

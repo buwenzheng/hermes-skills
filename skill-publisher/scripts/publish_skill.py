@@ -399,6 +399,8 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str, 
         # 平铺：直接在仓库根目录创建 skill 目录
         target = work_dir / flat_name
         target.mkdir(exist_ok=True)
+        # 复制前先记录远程版本号（复制后远程版本会被覆盖）
+        remote_ver = get_skill_version(target) if (target / 'SKILL.md').exists() else None
         for item in skill_dir.iterdir():
             if item.name == '__pycache__':
                 continue
@@ -424,10 +426,18 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str, 
         work_skill_md = target / 'SKILL.md'
         content = work_skill_md.read_text(encoding='utf-8', errors='ignore')
         if explicit_version:
+            # 用户通过 --version 显式指定
             new_ver = explicit_version
             updated_content = re.sub(r'^version:\s*\S+', f'version: {new_ver}',
                                      content, flags=re.MULTILINE)
+        elif remote_ver and cur_ver != remote_ver:
+            # 本地版本 ≠ 远程版本 → 用户手动改了，直接用本地版本
+            new_ver = cur_ver
+            updated_content = re.sub(r'^version:\s*\S+', f'version: {new_ver}',
+                                     content, flags=re.MULTILINE)
+            print(f"  本地版本已修改 ({remote_ver} → {new_ver})，跳过 bump")
         else:
+            # 版本未改 → 正常 bump patch
             updated_content, new_ver = bump_version(content)
         work_skill_md.write_text(updated_content, encoding='utf-8')
         print(f"  {cur_ver} → {new_ver}")

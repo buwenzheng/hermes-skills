@@ -4,7 +4,7 @@
 |-------|---------|-----------|--------|
 | siyuan | 1.0.0 | 2026-05-07 | `7bd195b` |
 | skill-audit | 1.1.0 | 2026-05-14 | `7965e14` |
-| skill-publisher | 2.4.1 | 2026-05-14 | `abe2101` |
+| skill-publisher | 2.4.2 | 2026-05-14 | `444d1a9` |
 | chsrc | 1.0.1 | 2026-05-07 | `4e0a2cb` |
 
 | mcp/music-tag-web-mcp | 1.0.2 | 2026-05-08 | `7e12570` |
@@ -13,9 +13,9 @@
 
 | siyuan-custom | 1.2.3 | 2026-05-14 | `7de67b9` |
 
-| skill-publisher | 2.4.1 | 2026-05-14 | `abe2101` |
+| skill-publisher | 2.4.2 | 2026-05-14 | `444d1a9` |
 
-| skill-publisher | 2.4.1 | 2026-05-14 | `abe2101` |
+| skill-publisher | 2.4.2 | 2026-05-14 | `444d1a9` |
 | siyuan-custom | 1.2.3 | 2026-05-14 | `7de67b9` |
 
 | siyuan-custom | 1.2.3 | 2026-05-14 | `7de67b9` |

@@ -6,7 +6,7 @@ description: >-
   搜索笔记, 查文档, 建块, 块引用, 嵌入块, 模板, 闪卡, 思源 API,
   思源笔记操作, siyuan api. Covers both conceptual questions and practical operations
   (query, search, create, update, delete blocks via API).
-version: 1.3.2
+version: 1.3.1
 tags: [siyuan, 思源, 笔记查询, 搜索笔记, 查文档, 建块, 块引用, 嵌入块, 模板, 闪卡, 思源 API, 思源笔记操作, siyuan api]
 related_skills: []
 required_environment_variables:
@@ -341,5 +341,4 @@ python3 scripts/siyuan_api.py cache_clear doc_tree:<笔记本ID>        # 清除
 7. **`removeDocByID` 不删除 blocks 记录** — 只删文件，block 变孤儿（`type='d'` 但内容为空）。`doc_tree` 查询已加 `content IS NOT NULL` 过滤
 8. **思源 SQL API 只读** — `/api/query/sql` 的 INSERT/UPDATE/DELETE 返回 code=0 但不执行
 9. **Terminal 与 execute_code 沙箱文件视图不一致** — 始终用 terminal 工具操作脚本文件
-8. **`renameDocByID` 后 SQL 搜索可能找不到** — 重命名改了文件系统但 blocks 表的 hpath/name 可能未同步，`search_doc` 用 SQL LIKE 搜索可能命中不了刚改名的文档
-9. **`remove_doc_by_id` 后 doc_tree 缓存可能残留** — API 返回成功但缓存未自动失效，需手动 `cache_clear doc_tree:<笔记本ID>` 或 `--no-cache` 查看最新状态
+10. **`remove_doc_by_id` 后缓存可能残留** — API 返回成功但 doc_tree 缓存未自动失效，需手动 `cache_clear doc_tree:<笔记本ID>` 或 `--no-cache`

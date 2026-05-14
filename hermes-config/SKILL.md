@@ -1,7 +1,13 @@
 ---
 name: hermes-config
-description: "Use when modifying Hermes Agent configuration: adding providers, changing models, editing .env keys, or troubleshooting config-related issues. Captures pitfalls discovered during real config changes."
-version: 1.0.0
+description: >-
+  Use when modifying Hermes Agent configuration, including adding providers,
+  changing models, editing .env keys, or troubleshooting config-related issues.
+  Also triggers on Chinese queries like 改配置、换模型、加 provider、配置报错、
+  API key 失效、config.yaml、.env 文件修改、切换默认模型、添加新模型、
+  配置小米/火山/MiniMax provider、provider 401 排查。
+  Captures pitfalls discovered during real config changes.
+version: 1.1.0
 author: Hermes Agent
 license: MIT
 metadata:
@@ -17,11 +23,12 @@ required_environment_variables: []
 
 ## When to Use
 
-- 添加新的 LLM provider（如小米 MiMo、火山引擎 ARK）
-- 修改默认模型
-- 编辑 `.env` 中的 API key
-- 修改 `config.yaml` 中的 provider/model 设置
-- 配置相关报错排查
+- 添加新的 LLM provider（如小米 MiMo、火山引擎 ARK）→ "加 provider"、"添加模型"
+- 修改默认模型 → "换模型"、"切模型"、"改默认模型"
+- 编辑 `.env` 中的 API key → "改 key"、"更新 token"、"API key 失效"
+- 修改 `config.yaml` 中的 provider/model 设置 → "改配置"、"config 报错"
+- 配置相关报错排查 → "401"、"连不上"、"模型不生效"
+- Profile 配置问题 → "profile 配置"、"切换 profile"
 
 ## INT 初始化步骤
 
@@ -242,10 +249,94 @@ grep "API_KEY\|_KEY" ~/.hermes/.env | sed 's/=.*/=***/'
 curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $KEY" https://api.example.com/v1/models
 ```
 
+#### 12. Profile 配置 Provider 后 401：检查 profile .env 是否有完整 key
+**现象**：主 profile 正常，但 `-p kato-kona` 报 `401 Invalid API Key`
+**原因**：profile `.env` 可能缺少必要的环境变量（如 `XIAOMI_BASE_URL`），或 key 值与主 .env 不一致
+**排查步骤**：
+```bash
+# 1. 对比主 .env 和 profile .env
+diff <(grep XIAOMI ~/.hermes/.env) <(grep XIAOMI ~/.hermes/profiles/kato-kona/.env)
+
+# 2. 验证 key 有效性（直接 curl，不经过 Hermes）
+source ~/.hermes/profiles/kato-kona/.env
+curl -s https://token-plan-cn.xiaomimimo.com/v1/models \
+  -H "Authorization: Bearer $XIAOMI_API_KEY"
+
+# 3. 如果 curl 也 401，说明 key 本身无效，不是配置问题
+# 4. 如果 curl 正常但 Hermes 报错，检查 config.yaml 中 api_key 字段是否引用了正确变量名
+```
+
+#### 13. 给其他 profile 添加 provider 的完整流程
+**场景**：给 kato-kona 等非默认 profile 添加小米 provider
+**步骤**：
+```bash
+# 1. 确保 profile .env 有 key（不要只改主 .env）
+echo 'XIAOMI_API_KEY=tp-xxx' >> ~/.hermes/profiles/<name>/.env
+
+# 2. 确保 config.yaml 中 provider 配置正确（profile 的 config.yaml）
+# providers:
+#   xiaomi:
+#     api_key: ${XIAOMI_API_KEY}
+#     base_url: https://token-plan-cn.xiaomimimo.com/v1
+
+# 3. 重启该 profile 的网关
+hermes -p <name> gateway restart
+
+# 4. 验证
+hermes -p <name> chat -m xiaomi/mimo-v2.5 -q "Hi"
+```
+
+#### 14. 更换默认模型时的 auxiliary 处理规则
+**compression**：自动跟随默认模型一起换（用户期望一致）
+**title_generation**：询问用户要换成什么模型（可能想用更便宜的）
+**delegation**：询问用户要换成什么模型（子 agent 可能需要不同模型）
+
+```bash
+# compression — 自动换
+sed -i 's|model: MiniMax-M2.7|model: mimo-v2.5|g' config.yaml
+sed -i 's|provider: minimax-cn|provider: xiaomi|g' config.yaml
+
+# title_generation / delegation — 先问用户再改
+```
+
+#### 15. Curator 自动归档不会影响已安装的 skill
+**现象**：担心 curator 把自己维护的 skill 归档掉
+**实际行为**：curator 只处理 agent-created skills（通过 `skill_manage` 创建的），通过 `skill install` 安装的不受影响
+**保护 agent-created skill**：
+```bash
+hermes curator pin <skill-name>     # pin 住不想被归档的
+hermes curator unpin <skill-name>   # 解除保护
+hermes curator status               # 查看当前状态
+```
+**配置**：`curator.stale_after_days`（默认 30 天未用变 stale）、`curator.archive_after_days`（默认 90 天归档）
+
+#### 15. title_generation / auxiliary 子任务的 base_url 必须匹配 API 格式
+**现象**：`Auxiliary title generation failed: HTTP 401` 但主模型正常
+**原因**：`title_generation` 等 auxiliary 配置的 `base_url` 用了 `/anthropic` 端点，但请求是 OpenAI 格式，认证方式不兼容
+**解决**：确保 auxiliary 的 `base_url` 与实际 API 格式匹配：
+```bash
+# 错误 — anthropic 端点不接受 OpenAI 格式请求
+hermes config set auxiliary.title_generation.base_url 'https://api.minimaxi.com/anthropic'
+
+# 正确 — OpenAI 格式用 /v1
+hermes config set auxiliary.title_generation.base_url 'https://api.minimaxi.com/v1'
+```
+
+#### 16. publish_skill.py 已内建 .env 加载（已修复）
+**旧版问题**：报 `❌ 缺少 GITHUB_TOKEN`，但 .env 里明明有
+**现状**：v2.3.0 起脚本开头调用 `_load_dotenv()` 自动读取 `~/.hermes/.env`，无需手动 export
+**如果仍报错**：检查 `.env` 格式是否正确（`GITHUB_TOKEN=ghp_...`，无引号，无空格）
+
 ---
 
 ## 更新日志
 
 | 日期 | 内容 |
 |------|------|
+| 2026-05-08 | 补充 publish_skill.py .env 读取 pitfall（#15） |
 | 2026-05-08 | 初版：添加小米 MiMo provider 时积累的经验 |
+| 2026-05-08 | 补充 profile provider 401 排查和完整配置流程（#12, #13） |
+| 2026-05-08 | 补充更换默认模型需同步 auxiliary/delegation（#14） |
+| 2026-05-08 | 补充 curator 归档机制和 skill 保护（#15） |
+| 2026-05-08 | 补充 publish_skill.py .env 读取 pitfall（#16） |
+| 2026-05-10 | 补充 title_generation/auxiliary base_url 格式匹配 pitfall（#15） |

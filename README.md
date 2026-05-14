@@ -11,7 +11,7 @@
 | [music-tag-web-mcp](./music-tag-web-mcp) | 1.0.2 | "Use when querying or editing music file metadata (tags, genres, titles, artists | uncategorized |
 | [siyuan-custom](./siyuan-custom) | 1.3.2 | Use when the user asks about, queries, searches, creates, edits, or manages cont | uncategorized |
 | [skill-audit](./skill-audit) | 1.1.0 | Use when the user asks to audit, scan, or review a local Hermes skill for securi | uncategorized |
-| [skill-publisher](./skill-publisher) | 2.4.4 | Use when the user asks to publish, push, push skill, 提交, 发布, 推送, 上传, or send a l | uncategorized |
+| [skill-publisher](./skill-publisher) | 2.4.5 | Use when the user asks to publish, push, push skill, 提交, 发布, 推送, 上传, or send a l | uncategorized |
 
 ## 安装技能
 

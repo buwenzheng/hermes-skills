@@ -321,12 +321,15 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str, 
         if not work_dir.exists() or not (work_dir / '.git').exists():
             print(f"❌ 工作目录不存在或不是 git 仓库: {work_dir}")
             sys.exit(1)
-        # 清理旧的 skill 目录（如果存在）
+        # 记录远程版本号（删除旧目录前）
         old_skill = work_dir / flat_name
+        remote_ver = get_skill_version(old_skill) if (old_skill / 'SKILL.md').exists() else None
+        # 清理旧的 skill 目录（如果存在）
         if old_skill.exists():
             shutil.rmtree(old_skill)
     else:
         work_dir = Path(f'/tmp/{flat_name}-push')
+        remote_ver = None  # 临时目录无远程版本
     quarantine = Path(f'/tmp/skill-publisher-quarantine-{int(time.time())}')
 
     try:
@@ -399,8 +402,6 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str, 
         # 平铺：直接在仓库根目录创建 skill 目录
         target = work_dir / flat_name
         target.mkdir(exist_ok=True)
-        # 复制前先记录远程版本号（复制后远程版本会被覆盖）
-        remote_ver = get_skill_version(target) if (target / 'SKILL.md').exists() else None
         for item in skill_dir.iterdir():
             if item.name == '__pycache__':
                 continue
@@ -439,7 +440,6 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str, 
         else:
             # 版本未改 → 正常 bump patch
             updated_content, new_ver = bump_version(content)
-            print(f"  [DEBUG] else分支: remote_ver={remote_ver}, cur_ver={cur_ver}, new_ver={new_ver}")
         work_skill_md.write_text(updated_content, encoding='utf-8')
         print(f"  {cur_ver} → {new_ver}")
         print()

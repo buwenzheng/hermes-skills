@@ -79,6 +79,7 @@ required_environment_variables:
 | 模板开发 | [references/template.md](references/template.md) |
 | API 交互 | [references/api.md](references/api.md) |
 | 闪卡系统 | [references/flashcard.md](references/flashcard.md) |
+| 缓存机制 | [references/cache-invalidation.md](references/cache-invalidation.md) |
 
 ## 快速参考
 

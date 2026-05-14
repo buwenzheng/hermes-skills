@@ -7,7 +7,7 @@
 | skill-publisher | 2.4.2 | 2026-05-14 | `444d1a9` |
 | chsrc | 1.0.1 | 2026-05-07 | `4e0a2cb` |
 
-| mcp/music-tag-web-mcp | 1.0.2 | 2026-05-08 | `7e12570` |
+| music-tag-web-mcp | 1.0.2 | 2026-05-08 | `7e12570` |
 
 | hermes-config | 1.1.0 | 2026-05-14 | `ec46a2f` |
 

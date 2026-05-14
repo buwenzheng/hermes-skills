@@ -11,11 +11,11 @@
 
 | hermes-config | 1.1.0 | 2026-05-14 | `ec46a2f` |
 
-| siyuan-custom | 1.3.2 | 2026-05-14 | `76d1b12` |
+| siyuan-custom | 1.3.1 | 2026-05-14 | `6344399` |
 
 | skill-publisher | 2.4.5 | 2026-05-14 | `4641c8b` |
 
 | skill-publisher | 2.4.5 | 2026-05-14 | `4641c8b` |
-| siyuan-custom | 1.3.2 | 2026-05-14 | `76d1b12` |
+| siyuan-custom | 1.3.1 | 2026-05-14 | `6344399` |
 
-| siyuan-custom | 1.3.2 | 2026-05-14 | `76d1b12` |
+| siyuan-custom | 1.3.1 | 2026-05-14 | `6344399` |

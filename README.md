@@ -8,7 +8,7 @@
 |-------|------|------|------|
 | [chsrc](./chsrc) | 1.0.1 | chsrc 换源工具，通过自动测速为各种编程语言/OS/软件切换到国内最快镜像源 | productivity |
 | [hermes-config](./hermes-config) | 1.0.0 | "Use when modifying Hermes Agent configuration: adding provi | uncategorized |
-| [siyuan-custom](./siyuan-custom) | 1.2.1 | 思源笔记（SiYuan Note）基础知识库，提供核心概念（内容块、块引用、嵌入块）、通用 API 调用方法、模板语法、 | uncategorized |
+| [siyuan-custom](./siyuan-custom) | 1.2.2 | >- | uncategorized |
 | [skill-audit](./skill-audit) | 1.0.0 | Use when the user asks to audit, scan, or review a local Her | uncategorized |
 | [skill-publisher](./skill-publisher) | 2.1.1 | Use when the user asks to publish a local Hermes skill to Gi | uncategorized |
 

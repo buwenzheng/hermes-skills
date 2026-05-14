@@ -1,8 +1,13 @@
 ---
 name: siyuan-custom
-description: 思源笔记（SiYuan Note）基础知识库，提供核心概念（内容块、块引用、嵌入块）、通用 API 调用方法、模板语法、闪卡系统等基础知识。当询问思源笔记的基本概念、API 原理、块操作语法、模板开发或通用操作时使用此技能（基础层）。
-version: 1.2.1
-tags: [siyuan, 笔记, knowledge-management]
+description: >-
+  Use when the user asks about, queries, searches, creates, edits, or manages
+  content in SiYuan Note (思源笔记). Also triggers on: siyuan, 思源, 笔记查询,
+  搜索笔记, 查文档, 建块, 块引用, 嵌入块, 模板, 闪卡, 思源 API,
+  思源笔记操作, siyuan api. Covers both conceptual questions and practical
+  operations (query, search, create, update, delete blocks via API).
+version: 1.2.2
+tags: [siyuan, 思源, 笔记, knowledge-management, 搜索, 查询, 块操作]
 required_environment_variables:
   - name: SIYUAN_API_URL
     prompt: 思源笔记 API 地址（如 http://127.0.0.1:6806）

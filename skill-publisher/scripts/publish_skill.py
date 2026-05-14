@@ -102,8 +102,19 @@ def get_proxy_config() -> dict:
     return {}
 
 
+def _proxy_env() -> dict:
+    """返回包含代理环境变量的 env dict，供 subprocess 使用。"""
+    env = os.environ.copy()
+    proxy = env.get('HTTP_PROXY') or env.get('http_proxy')
+    if proxy:
+        env['http_proxy'] = proxy
+        env['https_proxy'] = proxy
+    return env
+
+
 def run(cmd: list, *, cwd: Path | None = None, capture_output: bool = True) -> subprocess.CompletedProcess:
-    result = subprocess.run(cmd, cwd=cwd, capture_output=capture_output, text=True)
+    result = subprocess.run(cmd, cwd=cwd, capture_output=capture_output, text=True,
+                            env=_proxy_env())
     if result.returncode != 0:
         print(f"❌ 命令失败: {' '.join(cmd)}")
         print(f"   exit code: {result.returncode}")
@@ -118,7 +129,7 @@ def run(cmd: list, *, cwd: Path | None = None, capture_output: bool = True) -> s
 def curl_get(url: str, token: str) -> dict:
     result = subprocess.run(
         ['curl', '-s', '-H', f'Authorization: token {token}', url],
-        capture_output=True, text=True
+        capture_output=True, text=True, env=_proxy_env()
     )
     try:
         return json.loads(result.stdout)
@@ -131,7 +142,7 @@ def check_repo_exists(user: str, repo: str, token: str) -> bool:
         ['curl', '-s', '-o', '/dev/null', '-w', '%{http_code}',
          '-H', f'Authorization: token {token}',
          f'https://api.github.com/repos/{user}/{repo}'],
-        capture_output=True, text=True
+        capture_output=True, text=True, env=_proxy_env()
     )
     return r.stdout == '200'
 
@@ -365,7 +376,8 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str, 
             default_branch = get_default_branch(user, repo, token)
             pull = subprocess.run(
                 ['git', 'pull', 'origin', default_branch],
-                cwd=work_dir, capture_output=True, text=True
+                cwd=work_dir, capture_output=True, text=True,
+                env=_proxy_env()
             )
             if pull.returncode != 0:
                 print(f"  ⚠ git pull 失败: {pull.stderr[:200]}")
@@ -462,7 +474,7 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str, 
         askpass = Path('/tmp/git-askpass.sh')
         askpass.write_text(f'#!/bin/bash\necho "{token}"\n')
         askpass.chmod(0o700)
-        env = os.environ.copy()
+        env = _proxy_env()
         env['GIT_ASKPASS'] = str(askpass)
 
         # 直接 push，不用 --force-with-lease

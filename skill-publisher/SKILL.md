@@ -7,7 +7,7 @@ description: >-
   automated regex scan (audit_scan.py) plus LLM deep review (agent reads code).
   Only proceeds if both layers APPROVED. Direct push to main, bumps version,
   isolates sensitive files, updates README.
-version: 2.4.0
+version: 2.4.1
 author: Hermes Agent
 license: MIT
 metadata:
@@ -275,6 +275,16 @@ Step 6: 自动 pin 本机 skill（防止 curator 归档）
 26. **Skill 目录查找不支持分类子目录** — 脚本查找 skill 目录时，不能假设所有 skill 都在 `~/.hermes/skills/<name>/`。实际 skill 可能在 `~/.hermes/skills/<category>/<name>/`（如 `productivity/skill-publisher`）。v2.3.2 已修复：使用 `Path.rglob(name)` 递归搜索。如果仍找不到，检查 `~/.hermes/skills/` 下的目录结构。
 
 27. **finally 块误删用户工作目录** — 旧版脚本的 `finally` 块会 `shutil.rmtree(work_dir)`，包括用户通过 `--work-dir` 或 `HERMES_WORK_DIR` 指定的现有仓库目录。v2.3.2 已修复：只删除脚本自己创建的临时目录（`/tmp/<skill>-push`），不删除用户指定的工作目录。如果发现工作目录被意外删除，检查脚本的 finally 逻辑是否正确区分了临时目录和用户目录。
+
+28. **Skill 目录查找需递归搜索** — 脚本不能假设 skill 在 `~/.hermes/skills/<name>/`。实际可能在子目录如 `~/.hermes/skills/productivity/skill-publisher`。v2.3.3 已修复：用 `Path.rglob(name)` 递归搜索 `~/.hermes/skills/`。如果仍找不到，检查目录结构。
+
+29. **HERMES_WORK_DIR 环境变量** — INT 步骤中配置 `HERMES_WORK_DIR` 到 `~/.hermes/.env`，脚本自动读取，无需每次传 `--work-dir`。配置方式：`echo 'HERMES_WORK_DIR=/home/hermes/hermes-work/default/hermes-skills' >> ~/.hermes/.env`。
+
+30. **发布必须走两层审核** — Step 0a 自动化扫描（audit_scan.py）+ Step 0b LLM 深度审核（agent 读代码自行判断）。两层都通过才发布。不能只跑脚本不读代码，也不能只读代码不跑脚本。这是用户多次纠正的核心工作流。
+
+31. **GIT_ASKPASS 认证方式** — push 使用 GIT_ASKPASS 注入 token，禁止嵌入 remote URL。脚本自动创建 `/tmp/git-askpass.sh`（chmod 700）。如果手动 push 需同样设置：`GIT_ASKPASS=/tmp/git-askpass.sh git push origin main`。
+
+32. **代理必须在 push 前设置** — `export https_proxy=http://127.0.0.1:7890`，push 完后 `unset https_proxy`。代理地址从 .env 读取，禁止硬编码。
 
 ---
 

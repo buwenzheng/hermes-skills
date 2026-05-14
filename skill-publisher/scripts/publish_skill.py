@@ -4,10 +4,11 @@ Hermes Skill 发布脚本
 
 流程：
   1. clone → 隔离敏感文件
-  2. 版本号 bump（patch +1）
-  3. git add → staged grep → commit → push
-  4. GitHub API 验证
-  5. PUBLISHED.md 更新 → 第二次 commit + push
+  2. 版本号 bump（patch +1）或指定版本
+  3. 更新 README.md
+  4. git add → staged grep → commit → push
+  5. GitHub API 验证
+  6. PUBLISHED.md 更新 → 第二次 commit + push
 """
 
 import os
@@ -106,8 +107,10 @@ def run(cmd: list, *, cwd: Path | None = None, capture_output: bool = True) -> s
     if result.returncode != 0:
         print(f"❌ 命令失败: {' '.join(cmd)}")
         print(f"   exit code: {result.returncode}")
-        print(f"   stdout: {result.stdout[:300]}")
-        print(f"   stderr: {result.stderr[:300]}")
+        stdout_preview = (result.stdout or '')[:300]
+        stderr_preview = (result.stderr or '')[:300]
+        print(f"   stdout: {stdout_preview}")
+        print(f"   stderr: {stderr_preview}")
         sys.exit(1)
     return result
 
@@ -216,6 +219,11 @@ def _dedupe_gitignore(gitignore_path: Path):
     gitignore_path.write_text('\n'.join(deduped) + '\n')
 
 
+def _git_config(work_dir: Path, key: str, val: str):
+    subprocess.run(['git', 'config', key, val], cwd=work_dir,
+                   capture_output=True)
+
+
 def update_readme(work_dir: Path, token: str):
     """扫描仓库内所有 skill 目录，重新生成 README.md 中的"现有技能"表格。"""
     def _extract_desc(fm: str) -> str:
@@ -294,11 +302,6 @@ def update_readme(work_dir: Path, token: str):
     print(f"  ✓ README.md 已更新（{len(skills)} 个 skill）")
 
 
-def _git_config(work_dir: Path, key: str, val: str):
-    subprocess.run(['git', 'config', key, val], cwd=work_dir,
-                   capture_output=True)
-
-
 def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str, explicit_version: str = None):
     # 平铺名称：去掉分类前缀
     flat_name = get_flat_name(skill_name)
@@ -324,6 +327,11 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str, 
         if work_dir.exists():
             shutil.rmtree(work_dir)
         quarantine.mkdir(parents=True, exist_ok=True)
+        quarantine.mkdir(parents=True, exist_ok=True)
+        # 代理配置：从环境变量读取（HTTP_PROXY / HTTPS_PROXY），写入 git config
+        proxy_config = get_proxy_config()
+        for key, val in proxy_config.items():
+            _git_config(work_dir, key, val)
 
         run(['git', 'clone', '--depth', '1',
              f'https://github.com/{user}/{repo}.git', str(work_dir)],
@@ -377,11 +385,7 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str, 
         default_branch = get_default_branch(user, repo, token)
         _git_config(work_dir, 'user.email', 'hermes-agent@nomail')
         _git_config(work_dir, 'user.name', 'Hermes Agent')
-
-        # 代理配置：从环境变量或 git config 读取，不再硬编码
-        proxy_config = get_proxy_config()
-        for key, val in proxy_config.items():
-            _git_config(work_dir, key, val)
+        # 代理已在 Step 2 clone 前设置，此处跳过
 
         run(['git', 'add', '.'], cwd=work_dir)
 

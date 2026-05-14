@@ -11,7 +11,7 @@
 缓存:
     默认启用本地缓存（~/.config/siyuan/cache.json）
     缓存两周，写操作后自动失效
-    可用 --no-cache 强制走 API
+    可用 --no-cache 或 --refresh 强制走 API 并刷新缓存
 """
 
 import json
@@ -234,15 +234,16 @@ def _build_doc_tree(config, notebook_id):
 def cmd_doc_tree(config, notebook_id, use_cache=True):
     """查看笔记本的文档树（默认走缓存）"""
     cache_key = f"doc_tree:{notebook_id}"
-
-    if use_cache:
+    if not use_cache:
+        # --no-cache / --refresh：先清缓存，再重新构建
+        cache_invalidate(cache_key)
+        docs = _build_doc_tree(config, notebook_id)
+        cache_set(cache_key, docs)
+    else:
         docs, hit = cache_get(cache_key, ttl=14 * 24 * 3600)  # doc_tree 缓存两周
         if not hit:
             docs = _build_doc_tree(config, notebook_id)
             cache_set(cache_key, docs)
-    else:
-        docs = _build_doc_tree(config, notebook_id)
-        cache_set(cache_key, docs)
 
     if not docs:
         print("(空笔记本)")
@@ -938,10 +939,9 @@ def usage():
 
 用法:
     python3 siyuan_api.py <command> [args...] [--no-cache]
-
 缓存说明:
     默认走本地缓存（~/.config/siyuan/cache.json）
-    --no-cache 强制直连 API
+    --no-cache / --refresh 强制直连 API 并刷新缓存
     写操作（增/删/改）后自动使缓存失效
 
 【缓存管理】
@@ -1032,11 +1032,11 @@ def usage():
 if __name__ == "__main__":
     config = load_config()
 
-    # 解析 --no-cache 参数
+    # 解析 --no-cache / --refresh 参数
     use_cache = True
     real_args = []
     for a in sys.argv[1:]:
-        if a == "--no-cache":
+        if a in ("--no-cache", "--refresh"):
             use_cache = False
         else:
             real_args.append(a)

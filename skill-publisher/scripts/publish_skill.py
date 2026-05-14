@@ -442,8 +442,19 @@ def publish(skill_name: str, user: str, repo: str, skill_dir: Path, token: str, 
         print("■ Step 3: git add + staged grep + commit + push")
 
         default_branch = get_default_branch(user, repo, token)
-        _git_config(work_dir, 'user.email', 'hermes-agent@nomail')
-        _git_config(work_dir, 'user.name', 'Hermes Agent')
+        # git 用户名优先级：全局 git config → .env → 默认值
+        git_name = os.environ.get('GIT_USER_NAME', '')
+        git_email = os.environ.get('GIT_USER_EMAIL', '')
+        if not git_name:
+            r = subprocess.run(['git', 'config', '--global', 'user.name'],
+                               capture_output=True, text=True)
+            git_name = r.stdout.strip() if r.stdout.strip() else 'buwenzheng'
+        if not git_email:
+            r = subprocess.run(['git', 'config', '--global', 'user.email'],
+                               capture_output=True, text=True)
+            git_email = r.stdout.strip() if r.stdout.strip() else 'buwenzheng@users.noreply.github.com'
+        _git_config(work_dir, 'user.email', git_email)
+        _git_config(work_dir, 'user.name', git_name)
         # 代理已在 Step 2 clone 前设置，此处跳过
 
         run(['git', 'add', '.'], cwd=work_dir)

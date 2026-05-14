@@ -7,7 +7,7 @@ description: >-
   automated regex scan (audit_scan.py) plus LLM deep review (agent reads code).
   Only proceeds if both layers APPROVED. Direct push to main, bumps version,
   isolates sensitive files, updates README.
-version: 2.4.1
+version: 2.4.2
 author: Hermes Agent
 license: MIT
 metadata:
@@ -180,6 +180,7 @@ Step 6: 自动 pin 本机 skill（防止 curator 归档）
 
 **v2.3.0 变更记录**：见 `references/publish-skill-v2.3.0-changes.md`（--work-dir、--version、README 自动更新、代理从 .env 读取等）。
 **v2.3.2 变更记录**：见 `references/publish-skill-v2.3.2-changes.md`（递归目录查找、修复 finally 误删工作目录、HERMES_WORK_DIR 环境变量）。
+**v2.4.x 变更记录**：见 `references/proxy-pitfall.md`（subprocess 代理传递、LLM 审核步骤）。
 
 ---
 

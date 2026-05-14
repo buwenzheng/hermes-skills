@@ -1,7 +1,7 @@
 ---
 name: siyuan-custom
 description: 思源笔记（SiYuan Note）基础知识库，提供核心概念（内容块、块引用、嵌入块）、通用 API 调用方法、模板语法、闪卡系统等基础知识。当询问思源笔记的基本概念、API 原理、块操作语法、模板开发或通用操作时使用此技能（基础层）。
-version: 1.1.0
+version: 1.2.1
 tags: [siyuan, 笔记, knowledge-management]
 required_environment_variables:
   - name: SIYUAN_API_URL
@@ -55,6 +55,8 @@ required_environment_variables:
 5. **`create_doc` 多行内容**：命令行传入多行内容时换行符会被转义。若需多行内容，先 `create_doc` 创建空文档，再用 `update_block` 写入。
 6. **缓存不随 skill 发布**：`~/.config/siyuan/cache.json` 是本地缓存文件，不随 skill 发布。脚本默认使用本地缓存，用 `--no-cache` 可强制直连 API。
 7. **Terminal 与 execute_code 沙箱视图不一致**：始终用 terminal 工具操作脚本文件，不要依赖 execute_code 沙箱读写同一路径。
+8. **`export_resources` 需要工作区完整路径**：`/api/export/exportResources` 的 `paths` 参数必须是 `/data/<笔记本ID>/<目录名>` 格式，不是 hpath。脚本已自动转换。
+9. **`notebook` vs `notebookId` 参数命名不统一**：思源不同端点参数名不同。笔记本操作（open/close/rename/remove）用 `notebook`；`exportResources` 也用 `notebook`。脚本已统一处理，但直接调 API 时要注意。
 
 ## 核心概念
 

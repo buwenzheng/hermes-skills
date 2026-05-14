@@ -2,7 +2,7 @@
 
 ## API 概述
 
-- **实际服务地址**：`http://192.168.9.100:6806`（配置在 `scripts/siyuan_config.json`）
+- **实际服务地址**：从 `~/.config/siyuan/config` 读取（init 写入），不在 skill 发布文件内。
 - **请求方法**：所有 API 使用 POST
 - **数据格式**：JSON
 - **认证**：在请求头中添加 `Authorization: Token YOUR_API_TOKEN`
@@ -95,6 +95,42 @@ API Token 在思源笔记设置 → 关于 → API Token 中获取。
 - `code: 0` 表示成功
 - `msg` 包含错误信息
 - `data` 为返回数据
+
+### data 字段格式陷阱
+
+思源不同端点的 `data` 字段格式**极不一致**，以下是实测结果（v3.6.5）：
+
+| 端点 | data 类型 | 示例 |
+|------|-----------|------|
+| `/api/system/version` | `string` | `"3.6.5"` |
+| `/api/system/currentTime` | `int` (ms) | `1778661135264` |
+| `/api/notebook/lsNotebooks` | `{"notebooks": [...]}` | 唯一用 dict 包装的 |
+| `/api/filetree/getHPathByID` | `string` (hpath) | `"/文档路径"` |
+| `/api/filetree/getPathByID` | `{"path": "..."}` | 正常 dict |
+| `/api/filetree/getIDsByHPath` | `["id1", "id2"]` | **直接是列表** |
+| `/api/filetree/readDir` | `[{"name":"...", "isDir":true}]` | **直接是列表** |
+| `/api/block/insertBlock` | `[{"id":"...", ...}]` | **blocks 列表** |
+| `/api/block/appendBlock` | `[{"id":"...", ...}]` | 同上 |
+| `/api/block/prependBlock` | `[{"id":"...", ...}]` | 同上 |
+| `/api/block/getChildBlocks` | `[{"id":"...", ...}]` | **直接是列表** |
+| `/api/block/getBlockKramdown` | `{"id":"...", "kramdown":"..."}` | 正常 dict |
+| `/api/block/updateBlock` | `{"id":"...", "doVal":"..."}` | 正常 dict |
+| `/api/file/getFile` | **纯文本** (非 JSON) | 直接返回文件内容 |
+| `/api/file/putFile` | `{"code":0}` | 需 multipart/form-data |
+| `/api/attr/getBlockAttrs` | `{"id":"...", "key":"val"}` | 正常 dict |
+| `/api/template/render` | `{"html":"..."}` 或 `null` | **可能为 null** |
+| `/api/template/renderSprig` | `{"html":"..."}` 或 `null` | 同上 |
+| `/api/notification/pushMsg` | `{"code":0}` | 无 data |
+| `/api/query/sql` | `[{"col":"val"}]` | **直接是列表** |
+| `/api/asset/upload` | `{"errFiles":null, "succMap":{}}` | **succMap 可能为空** |
+
+**编码规则**：
+- 需要对 `data` 做 `isinstance` 检查，不能假设一定是 dict
+- `getFile` 返回纯文本，失败时才返回 JSON
+- `putFile` 必须用 `multipart/form-data`，不能用 JSON body
+- `getIDsByHPath` 需要同时传 `notebook` 和 `path` 参数
+- `exportResources` 的 `paths` 参数需要**工作区完整路径**（`/data/<nb_id>/<name>`），不是 hpath
+- `uploadAsset` 可能返回 code=0 但 `succMap` 为空——文件可能已上传但响应不映射，属 API 行为
 
 ## 🚨 重要警告：中文编码
 

@@ -60,8 +60,7 @@ def scan_sensitive(skill_dir: Path) -> list[dict]:
     for file_path in skill_dir.rglob('*'):
         if file_path.is_dir():
             continue
-        # 跳过 SKILL.md 和 .git
-        if file_path.name == 'SKILL.md' or '.git' in file_path.parts:
+        if '.git' in file_path.parts:
             continue
         if file_path.suffix not in extensions and not any(
             file_path.name.endswith(ext) for ext in ['.env']
@@ -90,7 +89,6 @@ def scan_forbidden(skill_dir: Path) -> list[str]:
     """扫描禁止文件"""
     forbidden = []
     for pattern in FORBIDDEN_PATTERNS:
-        # 处理通配符
         if '*' in pattern:
             for file_path in skill_dir.rglob(pattern):
                 forbidden.append(str(file_path.relative_to(skill_dir)))
@@ -121,13 +119,10 @@ def parse_frontmatter(skill_md_path: Path) -> tuple[Optional[dict], int]:
     if end_idx is None:
         return {}, 0
 
-    fm_text = '\n'.join(lines[1:end_idx])
     fm = {}
     current_key = None
-    current_indent = 0
 
     for line in lines[1:end_idx]:
-        # 检测嵌套字段（metadata.hermes.tags 等）
         if ':' in line:
             key = line.split(':', 1)[0].strip()
             val = line.split(':', 1)[1].strip()
@@ -138,7 +133,6 @@ def parse_frontmatter(skill_md_path: Path) -> tuple[Optional[dict], int]:
             elif '.' in key:
                 fm[key] = val
             current_key = key
-            current_indent = len(line) - len(line.lstrip())
         elif current_key in fm and isinstance(fm[current_key], list) and line.strip().startswith('-'):
             fm[current_key].append(line.strip()[1:].strip())
 
@@ -192,9 +186,9 @@ def check_format(skill_dir: Path) -> dict:
 
 def main(skill_name: Optional[str] = None):
     if skill_name:
+        # 支持嵌套路径如 productivity/skill-audit
         skill_dir = Path.home() / '.hermes' / 'skills' / skill_name
     else:
-        # 默认扫描当前目录
         skill_dir = Path.cwd()
 
     if not skill_dir.exists():

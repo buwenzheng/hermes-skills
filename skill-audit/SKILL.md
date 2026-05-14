@@ -1,7 +1,10 @@
 ---
 name: skill-audit
-description: Use when the user asks to audit, scan, or review a local Hermes skill for security and format compliance. Performs security scan, format review, outputs a detailed audit report, and suggests cleanup actions for sensitive files. Triggered manually — never automated.
-version: 1.0.0
+description: >-
+  Use when the user asks to audit, scan, or review a local Hermes skill for security and format compliance.
+  Two-layer audit: automated regex scan (audit_scan.py) plus LLM deep review (agent reads code and judges).
+  Outputs a detailed audit report and suggests cleanup actions.
+version: 1.1.0
 author: Hermes Agent
 license: MIT
 metadata:
@@ -37,10 +40,10 @@ python3 ~/.hermes/skills/productivity/skill-audit/scripts/audit_scan.py siyuan
 ```
 用户指定 skill
     ↓
-Step 1: 安全扫描（grep 扫敏感信息）
-    ↓ 发现敏感 → 列出位置 → REJECTED
-Step 2: 格式审核（frontmatter + 结构 + README + 正文结构）
-    ↓ 缺失项 → 列出缺失 → REJECTED
+Step 1: 自动化扫描（audit_scan.py — 正则 + 格式）
+    ↓ FAIL → 列出问题 → REJECTED
+Step 2: LLM 深度审核（agent 读代码 + 人工判断）
+    ↓ 严重问题 → 列出问题 → REJECTED
 Step 3: 敏感文件报告（只检测，不修改本地文件）
 Step 4: 复查（重新扫描）
     ↓ 干净 → APPROVED
@@ -81,14 +84,16 @@ patterns=(
   'AIza[0-9A-Za-z_-]{35}'
   'AccountKey=[a-zA-Z0-9+/=]{88}'
   'eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*'
-  'token\s*[:=]\s*['\''][a-zA-Z0-9_-]{16,}['\'']'
+  'token\s*[:=]\s*[\'"][a-zA-Z0-9_-]{16,}[\'"]'
   'token\s*[:=]\s*"[a-zA-Z0-9_-]{16,}"'
-  'api[_-]?key\s*[:=]\s*['\''][a-zA-Z0-9_-]{16,}['\'']'
+  'api[_-]?key\s*[:=]\s*[\'"][a-zA-Z0-9_-]{16,}[\'"]'
   'api[_-]?key\s*[:=]\s*"[a-zA-Z0-9_-]{16,}"'
-  'password\s*[:=]\s*['\''][^'\'']{8,}['\'']'
+  'password\s*[:=]\s*[\'"][^\'"]{8,}[\'"]'
   'password\s*[:=]\s*"[^"]{8,}"'
 )
-FOUND=0
+```
+
+**⚠️ 重要：SKILL.md 也要参与扫描！** 历史教训：music-tag-web-mcp 的 SKILL.md 里有硬编码 token `yadixc2yyemqkv7jjk4gj`，如果 SKILL.md 被排除在扫描外就会漏报。audit_scan.py 当前版本已包含 SKILL.md，但手动扫描时注意不要排除。
 for p in "${patterns[@]}"; do
   hits=$(grep -rnE "$p" . --exclude-dir=.git --exclude="SKILL.md" --include="*.py" --include="*.json" --include="*.sh" --include="*.yaml" --include="*.yml" --include="*.env" --include="*.toml" --include="*.txt" --include="*.conf" 2>/dev/null || true)
   [ -n "$hits" ] && { echo "MATCH: $p"; echo "$hits"; FOUND=1; }
@@ -195,6 +200,53 @@ SKILL.md 正文（不含 frontmatter）必须包含：
 
 ---
 
+## Step 2: LLM 深度审核
+
+自动化扫描只能检测正则匹配的模式和格式规范。**LLM 深度审核**由 agent 自身完成，不依赖外部 API 调用。
+
+### 2.1 读取 skill 文件
+
+```
+用 read_file 读取目标 skill 目录下的：
+1. SKILL.md — 完整内容
+2. scripts/ 下所有 .py / .sh 文件 — 代码逻辑
+3. references/ 下所有 .md 文件 — 参考文档
+```
+
+### 2.2 审核维度
+
+逐项检查以下问题，发现则记录：
+
+| 维度 | 检查内容 |
+|------|----------|
+| **硬编码凭证** | 正则扫不到的拼接方式：`"sk-" + "xxx"`、base64 编码的 key、从文件读取后未清理 |
+| **危险操作** | `rm -rf`、`chmod 777`、`eval()`、`exec()`、`subprocess(shell=True)` + 用户输入 |
+| **注入风险** | 用户输入直接拼接进 SQL/shell/HTTP 请求（f-string 构造命令等） |
+| **过度权限** | 不必要的网络请求、读写 skill 目录外的敏感路径 |
+| **数据泄露** | 可能将用户数据发送到第三方服务 |
+| **错误处理** | 关键操作无 try/except、异常时静默失败 |
+| **逻辑漏洞** | 竞态条件、缓存不一致、资源泄漏 |
+
+### 2.3 判定标准
+
+- **严重问题**（硬编码凭证、注入、危险操作）→ REJECTED
+- **中等问题**（错误处理缺失、过度权限）→ WARNING，建议修复后发布
+- **低风险**（代码风格、注释缺失）→ INFO，不阻塞发布
+
+### 2.4 输出格式
+
+```
+■ LLM 深度审核
+  - [严重] scripts/foo.py:42 — f-string 拼接 shell 命令，存在注入风险
+  - [中等] scripts/bar.py:18 — HTTP 请求无超时设置
+  - [低] scripts/baz.py:7 — 缺少 docstring
+  → PASS / WARNING / FAIL
+```
+
+**FAIL → 终止发布。WARNING → 继续但输出建议。INFO → 记录但不阻塞。**
+
+---
+
 ## Step 3: 敏感文件报告
 
 **不修改本地文件**，只列出建议清理的文件，由用户确认或交给 skill-publisher 处理：
@@ -240,14 +292,17 @@ VERSION=$(grep -m1 '^version:' ~/.hermes/skills/${SKILL_NAME}/SKILL.md | awk '{p
 Skill: ${SKILL_NAME}
 版本: ${VERSION}
 
-■ 安全扫描: PASS / FAIL
+■ 自动化扫描: PASS / FAIL
   - 敏感信息: 未发现 / 发现 N 处
   - 禁止文件: 无 / 存在 <文件列表>
-
-■ 格式审核: PASS / FAIL
   - Frontmatter: 完整 / 缺失 <字段>
   - README.md: 存在 / 缺失
   - 正文结构: 完整 / 缺失 <章节>
+
+■ LLM 深度审核: PASS / WARNING / FAIL
+  - [严重] <问题描述>
+  - [中等] <问题描述>
+  - [低] <问题描述>
 
 ■ 敏感文件清理建议:
   - 建议隔离: <文件列表>
@@ -273,7 +328,23 @@ Skill: ${SKILL_NAME}
 
 6. **token/api_key pattern 漏掉双引号格式** — `token\s*[:=]\s*['\'']...` 只匹配单引号包裹，漏掉 `siyuan_config.json` 类场景。必须同时覆盖单引号和双引号两种格式：`token\s*[:=]\s*"..."`。
 
-7. **audit_scan.py 不支持单文件路径** — 脚本依赖目录结构（需要读到 `SKILL.md`、`README.md`），传单个 `.py` 文件路径会错误地扫描其父目录。审计时必须传**目录路径**。
+6. **token/api_key pattern 漏掉双引号格式** — `token\\s*[:=]\\s*['\\'']...` 只匹配单引号包裹，漏掉 `siyuan_config.json` 类场景。必须同时覆盖单引号和双引号两种格式：`token\\s*[:=]\\s*\"...\"`。
+
+7. **禁止文件检查未中断** — `find` 命令列出文件后必须 `exit 1`，否则脚本继续执行并可能错误给出 APPROVED。
+
+8. **config/cache 文件在 skill 目录内** — `*_config.json` 和 `*_cache.json` 在 skill 内会被 skill-audit REJECTED，但即便 audit 通过，发布后 token 也会丢失。正确的做法是配置文件放在 `~/.config/<skill-name>/`，init 时自动创建（参见 Step 2.4 配置文件路径规约）。
+
+9. **audit_scan.py 传目录而非文件** — 脚本依赖目录结构（需要读到 `SKILL.md`、`README.md`），传单个 `.py` 文件路径会错误地扫描其父目录。审计时必须传**目录路径**。脚本路径用 `~/.hermes/skills/productivity/skill-audit/scripts/audit_scan.py`。
+
+    **skill 名称参数格式**：`audit_scan.py` 会在 `~/.hermes/skills/<传入名称>` 下查找 skill。传 `skill-publisher` → 找 `~/.hermes/skills/skill-publisher`；传 `productivity/skill-audit` → 找 `~/.hermes/skills/productivity/skill-audit`（嵌套在子目录里的 skill 才需要带路径前缀）。常用调用方式：
+
+    ```bash
+    # 直接用 skill 名（相对于 ~/.hermes/skills/）
+    python3 ~/.hermes/skills/productivity/skill-audit/scripts/audit_scan.py chsrc
+
+    # 带子目录前缀（嵌套分类下才需要）
+    python3 ~/.hermes/skills/productivity/skill-audit/scripts/audit_scan.py productivity/skill-publisher
+    ```
 
 ---
 

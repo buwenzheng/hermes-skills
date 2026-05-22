@@ -6,17 +6,19 @@
 
 | Skill | 版本 | 说明 | 分类 |
 |-------|------|------|------|
-| [chsrc](./chsrc) | 1.0.1 | chsrc 换源工具，通过自动测速为各种编程语言/OS/软件切换到国内最快镜像源 | productivity |
-| [hermes-config](./hermes-config) | 1.1.0 | Use when modifying Hermes Agent configuration, including adding providers, chang | uncategorized |
-| [music-tag-web-mcp](./music-tag-web-mcp) | 1.0.2 | "Use when querying or editing music file metadata (tags, genres, titles, artists | uncategorized |
-| [siyuan-custom](./siyuan-custom) | 1.3.1 | Use when the user asks about, queries, searches, creates, edits, or manages cont | uncategorized |
-| [skill-audit](./skill-audit) | 1.1.0 | Use when the user asks to audit, scan, or review a local Hermes skill for securi | uncategorized |
-| [skill-publisher](./skill-publisher) | 2.4.5 | Use when the user asks to publish, push, push skill, 提交, 发布, 推送, 上传, or send a l | uncategorized |
+| [chsrc](./skills/chsrc) | 1.0.1 | chsrc 换源工具，通过自动测速为各种编程语言/OS/软件切换到国内最快镜像源 | productivity |
+| [hermes-config](./skills/hermes-config) | 1.1.0 | Use when modifying Hermes Agent configuration, including adding providers, chang | uncategorized |
+| [music-tag-web-mcp](./skills/music-tag-web-mcp) | 1.0.2 | "Use when querying or editing music file metadata (tags, genres, titles, artists | uncategorized |
+| [siyuan-custom](./skills/siyuan-custom) | 1.3.1 | Use when the user asks about, queries, searches, creates, edits, or manages cont | uncategorized |
+| [skill-audit](./skills/skill-audit) | 1.1.0 | Use when the user asks to audit, scan, or review a local Hermes skill for securi | uncategorized |
+| [skill-publisher](./skills/skill-publisher) | 2.4.5 | Use when the user asks to publish, push, push skill, 提交, 发布, 推送, 上传, or send a l | uncategorized |
 
 ## 安装技能
 
 ```bash
 hermes skills install buwenzheng/hermes-skills/<skill-name>
+# 或使用 tap
+hermes skills tap add buwenzheng/hermes-skills
 ```
 
 ## 提交新技能
@@ -32,12 +34,13 @@ hermes-skills/
 ├── README.md
 ├── PUBLISHED.md          # 发布记录
 ├── .gitignore
-├── <skill-name>/         # 平铺结构，不嵌套
-│   ├── SKILL.md
-│   └── README.md
-└── ...
+└── skills/               # tap 搜索目录
+    ├── <skill-name>/
+    │   ├── SKILL.md
+    │   └── README.md
+    └── ...
 ```
 
 ## 安全说明
 
-发布前所有技能都会经过 `skill-audit` 敏感信息扫描，详见 [skill-publisher](./skill-publisher)。
+发布前所有技能都会经过 `skill-audit` 敏感信息扫描，详见 [skill-publisher](./skills/skill-publisher)。

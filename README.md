@@ -7,7 +7,7 @@
 | Skill | 版本 | 说明 | 分类 |
 |-------|------|------|------|
 | [chsrc](./skills/chsrc) | 1.0.1 | chsrc 换源工具，通过自动测速为各种编程语言/OS/软件切换到国内最快镜像源 | productivity |
-| [cursor-cli](./skills/cursor-cli) | 1.0.1 | Cursor CLI - AI coding agent in terminal. Supports interactive and non-interacti | uncategorized |
+| [cursor-cli](./skills/cursor-cli) | 2.0.0 | "Use when the user asks to delegate coding tasks to Cursor CLI, run Cursor agent | uncategorized |
 | [hermes-config](./skills/hermes-config) | 1.1.0 | Use when modifying Hermes Agent configuration, including adding providers, chang | uncategorized |
 | [music-tag-web-mcp](./skills/music-tag-web-mcp) | 1.0.2 | "Use when querying or editing music file metadata (tags, genres, titles, artists | uncategorized |
 | [qoder-cli](./skills/qoder-cli) | 1.0.1 | Use when the user mentions qodercli, qoder cli, AI coding assistant, code review | uncategorized |

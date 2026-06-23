@@ -6,6 +6,7 @@
 
 | Skill | 版本 | 说明 | 分类 |
 |-------|------|------|------|
+| [automation-hub](./skills/automation-hub) | 1.2.1 | 家庭 NAS 自动化任务管理中心。管理所有定时脚本、签到、监控、汇总类任务。 包含命名规范、任务清单、脚本模板。创建 cron job、定时签到、自动脚本、 监 | devops |
 | [chsrc](./skills/chsrc) | 1.0.1 | chsrc 换源工具，通过自动测速为各种编程语言/OS/软件切换到国内最快镜像源 | productivity |
 | [cursor-cli](./skills/cursor-cli) | 2.0.0 | "Use when the user asks to delegate coding tasks to Cursor CLI, run Cursor agent | uncategorized |
 | [hermes-config](./skills/hermes-config) | 1.1.0 | Use when modifying Hermes Agent configuration, including adding providers, chang | uncategorized |

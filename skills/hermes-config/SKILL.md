@@ -8,6 +8,7 @@ description: >-
   配置小米/火山/MiniMax provider、provider 401 排查。
   Captures pitfalls discovered during real config changes.
 version: 1.1.0
+category: hermes
 author: Hermes Agent
 license: MIT
 metadata:

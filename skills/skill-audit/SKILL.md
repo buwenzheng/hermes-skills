@@ -5,6 +5,7 @@ description: >-
   Two-layer audit: automated regex scan (audit_scan.py) plus LLM deep review (agent reads code and judges).
   Outputs a detailed audit report and suggests cleanup actions.
 version: 1.1.0
+category: productivity
 author: Hermes Agent
 license: MIT
 metadata:

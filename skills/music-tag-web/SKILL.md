@@ -2,6 +2,7 @@
 name: music-tag-web-mcp
 description: "Use when querying or editing music file metadata (tags, genres, titles, artists) via Music Tag Web's MCP service."
 version: 1.0.2
+category: media
 author: Hermes Agent
 license: MIT
 metadata:

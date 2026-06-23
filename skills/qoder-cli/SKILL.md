@@ -5,6 +5,7 @@ description: |
   slash commands like /review /init /agents, or needs to manage Subagent, custom commands, Skills, Hooks,
   or MCP services for an AI programming workflow.
 version: 1.0.1
+category: coding-agent
 author: Hermes Agent
 license: MIT
 metadata:

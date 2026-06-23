@@ -2,6 +2,7 @@
 name: cursor-cli
 description: "Use when the user asks to delegate coding tasks to Cursor CLI, run Cursor agent in terminal, automate code generation with Cursor, use Cursor in CI/CD, manage Cursor sessions, or integrate Cursor MCP servers. Keywords: cursor, ai agent, coding CLI, terminal, agent mode, plan mode, ask mode, non-interactive, headless, CI/CD, MCP, github actions, shell mode."
 version: 2.0.0
+category: coding-agent
 author: Hermes Agent
 license: MIT
 platforms: [linux, macos, windows]

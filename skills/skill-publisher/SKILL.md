@@ -8,6 +8,7 @@ description: >-
   Only proceeds if both layers APPROVED. Direct push to main, bumps version,
   isolates sensitive files, updates README.
 version: 2.4.5
+category: productivity
 author: Hermes Agent
 license: MIT
 metadata:

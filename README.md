@@ -6,15 +6,17 @@
 
 | Skill | 版本 | 说明 | 分类 |
 |-------|------|------|------|
-| [automation-hub](./skills/automation-hub) | 1.2.1 | 家庭 NAS 自动化任务管理中心。管理所有定时脚本、签到、监控、汇总类任务。 包含命名规范、任务清单、脚本模板。创建 cron job、定时签到、自动脚本、 监 | devops |
+| [automation-hub](./skills/automation-hub) | 1.2.1 | 家庭 NAS 自动化任务管理中心。管理所有定时脚本、签到、监控、汇总类任务。 包含命名规范、任务清单、脚本模板。创建 cron job、定... | devops |
 | [chsrc](./skills/chsrc) | 1.0.1 | chsrc 换源工具，通过自动测速为各种编程语言/OS/软件切换到国内最快镜像源 | productivity |
-| [cursor-cli](./skills/cursor-cli) | 2.0.0 | "Use when the user asks to delegate coding tasks to Cursor CLI, run Cursor agent | uncategorized |
-| [hermes-config](./skills/hermes-config) | 1.1.0 | Use when modifying Hermes Agent configuration, including adding providers, chang | uncategorized |
-| [music-tag-web-mcp](./skills/music-tag-web-mcp) | 1.0.2 | "Use when querying or editing music file metadata (tags, genres, titles, artists | uncategorized |
-| [qoder-cli](./skills/qoder-cli) | 1.0.1 | Use when the user mentions qodercli, qoder cli, AI coding assistant, code review | uncategorized |
-| [siyuan-custom](./skills/siyuan-custom) | 1.3.1 | Use when the user asks about, queries, searches, creates, edits, or manages cont | uncategorized |
-| [skill-audit](./skills/skill-audit) | 1.1.0 | Use when the user asks to audit, scan, or review a local Hermes skill for securi | uncategorized |
-| [skill-publisher](./skills/skill-publisher) | 2.4.5 | Use when the user asks to publish, push, push skill, 提交, 发布, 推送, 上传, or send a l | uncategorized |
+| [cursor-cli](./skills/cursor-cli) | 2.0.0 | Use when the user asks to delegate coding tasks to Cursor CLI, run Cu... | coding-agent |
+| [hermes-config](./skills/hermes-config) | 1.1.0 | Use when modifying Hermes Agent configuration, including adding provi... | hermes |
+| [music-tag-web-mcp](./skills/music-tag-web-mcp) | 1.0.2 | Use when querying or editing music file metadata (tags, genres, title... | media |
+| [qoder-cli](./skills/qoder-cli) | 1.0.1 | Use when the user mentions qodercli, qoder cli, AI coding assistant, ... | coding-agent |
+| [siyuan-custom](./skills/siyuan-custom) | 1.3.1 | Use when the user asks about, queries, searches, creates, edits, or m... | siyuan |
+| [skill-audit](./skills/skill-audit) | 1.1.0 | Use when the user asks to audit, scan, or review a local Hermes skill... | productivity |
+| [skill-publisher](./skills/skill-publisher) | 2.4.5 | Use when the user asks to publish, push, push skill, 提交, 发布, 推送, 上传, ... | productivity |
+
+
 
 ## 安装技能
 

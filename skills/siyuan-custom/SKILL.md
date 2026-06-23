@@ -7,6 +7,7 @@ description: >-
   思源笔记操作, siyuan api. Covers both conceptual questions and practical operations
   (query, search, create, update, delete blocks via API).
 version: 1.3.1
+category: siyuan
 tags: [siyuan, 思源, 笔记查询, 搜索笔记, 查文档, 建块, 块引用, 嵌入块, 模板, 闪卡, 思源 API, 思源笔记操作, siyuan api]
 related_skills: []
 required_environment_variables:
